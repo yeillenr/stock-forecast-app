@@ -248,6 +248,8 @@ class DashboardService:
                 "error": str(exc),
             }
 
+        accuracy = forecast_service.evaluate(dataframe=filtered_data)
+
         forecast_points = prophet_response.get("forecast", [])
         # Prévision moyenne
         predicted = round(
@@ -318,4 +320,6 @@ class DashboardService:
             "upper_demand": int(upper_demand),
             "forecast_uncertainty": round(uncertainty, 2),
             "confidence": confidence,
+            "MAE": accuracy["MAE"],
+            "RMSE": accuracy["RMSE"],
         }
