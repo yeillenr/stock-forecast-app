@@ -45,14 +45,13 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ## 3. Utilisation
 
 1. **Importer** (`/upload`) : importez votre historique de ventes, puis votre
-   stock actuel. Vous pouvez tester avec les fichiers fournis dans
-   `examples/sales_example.csv` et `examples/stock_example.csv`.
-2. **Prévisions** (`/forecast`) : choisissez un horizon (7 à 90 jours) et
+   stock actuel.
+2. **Prévisions** (`/forecast`) : choisissez un horizon (1 à 12 mois) et
    lancez la prévision. Un modèle Prophet est entraîné indépendamment pour
    chaque produit détecté dans les ventes. Consultez la courbe par produit.
 3. **Statut du stock** (`/`) : une fois une prévision calculée, cette page
    affiche pour chaque produit sa couverture en jours (stock actuel ÷ demande
-   moyenne prédite), la date de rupture estimée, et un statut :
+   moyenne prédite) et un statut :
    - **OK** — stock confortable
    - **À commander** — sous le seuil de réapprovisionnement
    - **Critique** — la couverture ne dépasse plus le délai de livraison
