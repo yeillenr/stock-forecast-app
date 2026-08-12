@@ -1,0 +1,10 @@
+{
+    "DP1608": {
+        "stock": 3000.0,
+        "delivery_time": 0
+    },
+    "DP1602": {
+        "stock": 20000.0,
+        "delivery_time": 0
+    }
+}
