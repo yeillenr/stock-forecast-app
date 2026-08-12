@@ -8,8 +8,8 @@ export default function WarehouseForm() {
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [warehouse, setWarehouse] = useState("");
   const [stockStatus, setStockStatus] = useState<StockStatusRow[]>([]);
-  const [stock, setStock] = useState<number>(0);
-  const [deliveryTime, setDeliveryTime] = useState<number>(0);
+  const [stock, setStock] = useState<number | "">("");
+  const [deliveryTime, setDeliveryTime] = useState<number | "">("");
   const [loading, setLoading] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +55,8 @@ export default function WarehouseForm() {
     try {
       await updateWarehouseSettings({
         warehouse,
-        stock,
-        delivery_time: deliveryTime,
+        stock: stock === "" ? 0 : stock,
+        delivery_time: deliveryTime ==="" ? 0 : deliveryTime,
       });
       setSavedMessage("Paramètres enregistrés.");
     } catch (err) {
@@ -91,7 +91,7 @@ export default function WarehouseForm() {
             type="number"
             className="w-full border border-line rounded-md p-3"
             value={stock}
-            onChange={(e) => setStock(Number(e.target.value))}
+            onChange={(e) => setStock(e.target.value === "" ? "" : Number(e.target.value))}
           />
         </div>
 

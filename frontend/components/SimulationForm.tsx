@@ -6,7 +6,7 @@ import { simulateForecast, getWarehouses, ApiRequestError } from "@/lib/api";
 export default function SimulationForm() {
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [warehouse, setWarehouse] = useState("");
-  const [stock, setStock] = useState(0);
+  const [stock, setStock] = useState<number | "">("");
   const [leadTime, setLeadTime] = useState(7);
   const [months, setMonths] = useState(3);
 
@@ -34,7 +34,7 @@ export default function SimulationForm() {
     try {
       const data = await simulateForecast({
         warehouse: warehouse || undefined,
-        current_stock: stock,
+        current_stock: stock === "" ? 0 : stock,
         lead_time: leadTime,
         months,
       });
@@ -132,17 +132,21 @@ export default function SimulationForm() {
       )}
 
       {result && (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <Card title="Demande prévue" value={`${formatNumber(result.predicted_demand?.toFixed?.(0)) } Kg`} />
-          <Card title="Demande ajustée" value={`${formatNumber(result.adjusted_demand) } Kg `} />
-          <Card title="Quantité à commander" value={`${formatNumber(result.quantity_to_order) } Kg `} />
-          <Card title="Autonomie restante" value={`${formatNumber(result.remaining_stock) } jours`} />
-          <Card title="Niveau de risque" value={result.risk } />
-          <Card title="Prochain approvisionnement" value={result.forecast_date } />
-          {/* <Card title="Incertitude" value={result.forcast_uncertainty } />
-          <Card title="Niveau de confiance" value={result.confidence } /> */}
+        <>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <Card title="Demande prévue" value={`${formatNumber(result.predicted_demand?.toFixed?.(0)) } Kg`} />
+            <Card title="Demande ajustée" value={`${formatNumber(result.adjusted_demand) } Kg `} />
+            <Card title="Quantité à commander" value={`${formatNumber(result.quantity_to_order) } Kg `} />
+            <Card title="Autonomie restante" value={`${formatNumber(result.remaining_stock) } jours`} />
+            <Card title="Niveau de risque" value={result.risk } />
+            <Card title="Prochain approvisionnement" value={result.forecast_date } />
+          </div>
 
-        </div>
+          <div className="grid md:grid-cols-2 gap-5">
+            <Card title="Incertitude" value={`${formatNumber(result.forecast_uncertainty) } Kg`} />
+            <Card title="Niveau de confiance" value={`${formatNumber(result.confidence) } %`} />
+          </div>
+        </>
       )}
     </div>
   );
