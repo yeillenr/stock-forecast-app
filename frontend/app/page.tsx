@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, ChangeEvent } from "react";
+import { useEffect, useRef, useState, ChangeEvent } from "react";
 
 import {
   Boxes,
@@ -13,27 +13,31 @@ import {
   ApiRequestError,
   getStockStatus,
   getWarehouses,
-  getForecast,
+  getSalesHistory,
 } from "@/lib/api";
 
-import type { ForecastApiResponse, StockStatusRow } from "@/lib/types";
+import type { StockStatusRow } from "@/lib/types";
 
 import StatCard from "@/components/StatCard";
 import StockStatusTable from "@/components/StockStatusTable";
-import ForecastChart from "@/components/ForecastChart";
+import StockLevelsChart from "@/components/StockLevelsChart";
 import HistoryChart from "@/components/HistoryChart";
 
 export default function DashboardPage() {
   const [rows, setRows] = useState<StockStatusRow[]>([]);
   const [warehouses, setWarehouses] = useState<string[]>([]);
-  const [forecastWarehouse, setForecastWarehouse] = useState("");
-  const [forecastData, setForecastData] = useState<ForecastApiResponse | null>(null);
+  const [salesWarehouse, setSalesWarehouse] = useState("");
+  const [salesHistory, setSalesHistory] = useState<{ date: string; quantity: number }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [forecastLoading, setForecastLoading] = useState(false);
+  const [salesLoading, setSalesLoading] = useState(false);
   const [error, setError] = useState("");
-  const [forecastError, setForecastError] = useState("");
+  const [salesError, setSalesError] = useState("");
+  const hasLoaded = useRef(false);
 
   useEffect(() => {
+    if (hasLoaded.current) return;
+    hasLoaded.current = true;
+
     setLoading(true);
     getStockStatus()
       .then(setRows)
@@ -48,28 +52,28 @@ export default function DashboardPage() {
         // ignore warehouse list error
       });
 
-    fetchForecast();
+    fetchSalesHistory();
   }, []);
 
-  async function fetchForecast(warehouse?: string) {
-    setForecastLoading(true);
-    setForecastError("");
+  async function fetchSalesHistory(warehouse?: string) {
+    setSalesLoading(true);
+    setSalesError("");
 
     try {
-      const data = await getForecast(warehouse, 3);
-      setForecastData(data);
+      const data = await getSalesHistory(warehouse);
+      setSalesHistory(data);
     } catch (err) {
-      setForecastError(err instanceof ApiRequestError ? err.message : "Impossible de charger les prévisions.");
-      setForecastData(null);
+      setSalesError(err instanceof ApiRequestError ? err.message : "Impossible de charger l'historique des ventes.");
+      setSalesHistory([]);
     } finally {
-      setForecastLoading(false);
+      setSalesLoading(false);
     }
   }
 
   const handleWarehouseChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const nextWarehouse = event.target.value;
-    setForecastWarehouse(nextWarehouse);
-    fetchForecast(nextWarehouse || undefined);
+    setSalesWarehouse(nextWarehouse);
+    fetchSalesHistory(nextWarehouse || undefined);
   };
 
   const stats = {
@@ -108,15 +112,15 @@ export default function DashboardPage() {
       <section className="bg-white rounded-xl p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
           <div>
-            <h2 className="text-xl font-semibold">Prévisions de ventes</h2>
-            <p className="text-sm text-ink-faint mt-1">Visualisation des prévisions à partir des ventes importées.</p>
+            <h2 className="text-xl font-semibold">Activité de stockage</h2>
+            <p className="text-sm text-ink-faint mt-1">Historique des ventes et niveaux de stock à partir des données importées.</p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <label className="text-sm font-medium text-ink">Entrepôt</label>
             <select
               className="border border-line rounded-lg px-3 py-2 bg-white"
-              value={forecastWarehouse}
+              value={salesWarehouse}
               onChange={handleWarehouseChange}
             >
               <option value="">Tous les entrepôts</option>
@@ -129,26 +133,24 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {forecastError ? (
-          <div className="text-status-critical text-sm">{forecastError}</div>
-        ) : forecastLoading ? (
-          <div className="text-sm text-ink-faint">Chargement des prévisions...</div>
-        ) : forecastData ? (
-          <div className="grid gap-6">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="bg-surface border border-line rounded-2xl p-5">
-                <h3 className="text-base font-semibold mb-4">Historique des ventes</h3>
-                <HistoryChart data={forecastData.history} />
-              </div>
-              <div className="bg-surface border border-line rounded-2xl p-5">
-                <h3 className="text-base font-semibold mb-4">Prévision</h3>
-                <ForecastChart data={forecastData.forecast} />
-              </div>
-            </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="bg-surface border border-line rounded-2xl p-5">
+            <h3 className="text-base font-semibold mb-4">Historique des ventes</h3>
+            {salesError ? (
+              <div className="text-status-critical text-sm">{salesError}</div>
+            ) : salesLoading ? (
+              <div className="text-sm text-ink-faint">Chargement de l'historique...</div>
+            ) : salesHistory.length > 0 ? (
+              <HistoryChart data={salesHistory} />
+            ) : (
+              <div className="text-sm text-ink-faint">Aucune vente disponible.</div>
+            )}
           </div>
-        ) : (
-          <div className="text-sm text-ink-faint">Aucune prévision disponible.</div>
-        )}
+          <div className="bg-surface border border-line rounded-2xl p-5">
+            <h3 className="text-base font-semibold mb-4">Niveaux de stock</h3>
+            <StockLevelsChart rows={rows} />
+          </div>
+        </div>
       </section>
 
       <section className="bg-white rounded-xl p-6 shadow-sm">

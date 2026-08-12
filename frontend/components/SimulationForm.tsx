@@ -3,32 +3,62 @@
 import { useEffect, useState } from "react";
 import { simulateForecast, getWarehouses, ApiRequestError } from "@/lib/api";
 
+const STORAGE_KEY = "simulation-form-state";
+
+function loadStoredState(): {
+  warehouse: string;
+  stock: number | "";
+  leadTime: number;
+  months: number;
+  result: any;
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function SimulationForm() {
+  const stored = loadStoredState();
+
   const [warehouses, setWarehouses] = useState<string[]>([]);
-  const [warehouse, setWarehouse] = useState("");
-  const [stock, setStock] = useState<number | "">("");
-  const [leadTime, setLeadTime] = useState(7);
-  const [months, setMonths] = useState(3);
+  const [warehouse, setWarehouse] = useState(stored?.warehouse ?? "");
+  const [stock, setStock] = useState<number | "">(stored?.stock ?? "");
+  const [leadTime, setLeadTime] = useState(stored?.leadTime ?? 7);
+  const [months, setMonths] = useState(stored?.months ?? 3);
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<any>(stored?.result ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getWarehouses()
       .then((data) => {
         setWarehouses(data);
-        if (data.length) {
+        if (data.length && !warehouse) {
           setWarehouse(data[0]);
         }
       })
       .catch((err) => {
         setError(err instanceof ApiRequestError ? err.message : "Impossible de charger les entrepôts.");
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ warehouse, stock, leadTime, months, result })
+    );
+  }, [warehouse, stock, leadTime, months, result]);
 
   async function simulate() {
     setError(null);
+    setResult(null);
     setLoading(true);
 
     try {
@@ -139,12 +169,17 @@ export default function SimulationForm() {
             <Card title="Quantité à commander" value={`${formatNumber(result.quantity_to_order) } Kg `} />
             <Card title="Autonomie restante" value={`${formatNumber(result.remaining_stock) } jours`} />
             <Card title="Niveau de risque" value={result.risk } />
-            <Card title="Prochain approvisionnement" value={result.forecast_date } />
+            <Card
+              title="Prochain approvisionnement"
+              value={new Date(result.forecast_date).toLocaleDateString("fr-FR", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",})}/>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-5">
-            <Card title="Incertitude" value={`${formatNumber(result.forecast_uncertainty) } Kg`} />
-            <Card title="Niveau de confiance" value={`${formatNumber(result.confidence) } %`} />
+          <div className="flex gap-4 text-xs italic text-ink-faint">
+            <span>MAE : {formatNumber(result.MAE)} Kg</span>
+            <span>RMSE : {formatNumber(result.RMSE)} Kg</span>
           </div>
         </>
       )}

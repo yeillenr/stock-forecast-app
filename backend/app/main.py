@@ -81,7 +81,6 @@ async def import_files(files: List[UploadFile] = File(...)):
             sales = store.prepare_sales(cleaned)
             daily = store.aggregate_daily_sales(sales)
             store.save_cleaned_data(daily)
-            forecast.train_model(daily)
             response["message"] = f"Historique de ventes importé ({len(sales_datasets)} fichiers)."
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -110,10 +109,10 @@ def stock_status():
     data = store.load_cleaned_data()
     return dashboard.stock_status_rows(dataframe=data)
 
-# @app.get("/sales")
-# def sales(warehouse: Optional[str] = Query(default=None)):
-#     data = store.load_cleaned_data()
-#     return {"sales": dashboard.sales_history(dataframe=data, warehouse=warehouse)}
+@app.get("/sales")
+def sales(warehouse: Optional[str] = Query(default=None)):
+    data = store.load_cleaned_data()
+    return dashboard.sales_history(dataframe=data, warehouse=warehouse)
 
 @app.post("/warehouse/settings")
 def update_settings(settings: WarehouseSettings):

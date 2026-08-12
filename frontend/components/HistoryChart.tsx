@@ -36,6 +36,7 @@ export default function HistoryChart({ data }: { data: SalesPoint[] }) {
             border: "1px solid #DCE3DF",
           }}
           labelStyle={{ color: "#16231F", fontWeight: 600 }}
+          formatter={(value: number) => new Intl.NumberFormat("fr-FR").format(value)}
         />
         <Line
           dataKey="quantity"

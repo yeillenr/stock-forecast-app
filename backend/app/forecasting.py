@@ -58,7 +58,7 @@ class ForecastingService:
             weekly_seasonality=True,
             daily_seasonality=False,
             changepoint_prior_scale=0.2,
-            seasonality_prior_scale=10
+            seasonality_prior_scale=10,
         )
 
         model.fit(train)
@@ -84,6 +84,7 @@ class ForecastingService:
     # -----------------------------------------------------
 
     def forecast(self, dataframe, months=3):
+        self.train_model(dataframe)
         model = self.load_model()
 
         history = self.prepare_data(dataframe)
@@ -95,7 +96,29 @@ class ForecastingService:
 
         prediction = model.predict(future)
 
-        return self.format_response(history, prediction, months)
+        response = self.format_response(history, prediction, months)
+        response.update(self._accuracy(model, history))
+
+        return response
+
+    # -----------------------------------------------------
+    # Précision (MAE / RMSE) sur l'historique, à partir
+    # d'un modèle déjà entraîné (pas de ré-entrainement)
+    # -----------------------------------------------------
+
+    def _accuracy(self, model, history):
+        prediction = model.predict(history[["ds"]])
+
+        y_true = history["y"]
+        y_pred = prediction["yhat"]
+
+        mae = abs(y_true - y_pred).mean()
+        rmse = ((y_true - y_pred) ** 2).mean() ** 0.5
+
+        return {
+            "MAE": round(float(mae), 2),
+            "RMSE": round(float(rmse), 2),
+        }
 
     # -----------------------------------------------------
     # Format JSON
@@ -130,6 +153,7 @@ class ForecastingService:
     # -----------------------------------------------------
 
     def evaluate(self, dataframe):
+        self.train_model(dataframe)
         model = self.load_model()
 
         prophet_df = self.prepare_data(dataframe)

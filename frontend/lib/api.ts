@@ -43,6 +43,12 @@ export async function getWarehouses(): Promise<string[]> {
   return handle<string[]>(res);
 }
 
+export async function getSalesHistory(warehouse?: string): Promise<{ date: string; quantity: number }[]> {
+  const query = warehouse ? `?warehouse=${encodeURIComponent(warehouse)}` : "";
+  const res = await fetch(`${API_BASE}/sales${query}`);
+  return handle<{ date: string; quantity: number }[]>(res);
+}
+
 export async function updateWarehouseSettings(data: {
   warehouse: string;
   stock: number;

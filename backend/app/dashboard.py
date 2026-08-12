@@ -63,15 +63,24 @@ class DashboardService:
     # HISTORIQUE DES VENTES
     # -----------------------------------
 
-    def sales_history(self, dataframe, warehouse):
+    def sales_history(self, dataframe, warehouse=None):
         df = dataframe.copy()
-        df = df[df["Entrepôt"] == warehouse]
+        if warehouse:
+            df = df[df["Entrepôt"] == warehouse]
+
         sales = (
-            df.groupby("Date physique")["Quantité"]
+            df.groupby(pd.Grouper(key="Date physique", freq="MS"))["Quantité"]
             .sum()
             .reset_index()
         )
-        return sales.to_dict(orient="records")
+
+        return [
+            {
+                "date": row["Date physique"].strftime("%Y-%m-%d"),
+                "quantity": round(float(row["Quantité"]), 2),
+            }
+            for _, row in sales.iterrows()
+        ]
 
     # -----------------------------------
     # CONSOMMATION MOYENNE
@@ -84,7 +93,12 @@ class DashboardService:
         if df.empty:
             return 0.0
 
-        average = df["Quantité"].mean()
+        span_days = (df["Date physique"].max() - df["Date physique"].min()).days + 1
+
+        if span_days <= 0:
+            return 0.0
+
+        average = df["Quantité"].sum() / span_days
 
         if pd.isna(average):
             return 0.0
@@ -100,9 +114,9 @@ class DashboardService:
         average = self.average_consumption(dataframe, warehouse)
 
         if average <= 0:
-            return 0.0
+            return 0
 
-        return round(stock / average, 1)
+        return int(round(stock / average))
 
     # -----------------------------------
     # DATE COMMANDE
@@ -111,7 +125,7 @@ class DashboardService:
     def reorder_days(self, dataframe, warehouse):
         autonomy = self.autonomy(dataframe, warehouse)
         delivery = self.get_delivery_time(warehouse)
-        return max(autonomy - delivery, 0)
+        return int(round(max(autonomy - delivery, 0)))
 
     # -----------------------------------
     # QUANTITE CONSEILLEE
@@ -248,8 +262,6 @@ class DashboardService:
                 "error": str(exc),
             }
 
-        accuracy = forecast_service.evaluate(dataframe=filtered_data)
-
         forecast_points = prophet_response.get("forecast", [])
         # Prévision moyenne
         predicted = round(
@@ -320,6 +332,6 @@ class DashboardService:
             "upper_demand": int(upper_demand),
             "forecast_uncertainty": round(uncertainty, 2),
             "confidence": confidence,
-            "MAE": accuracy["MAE"],
-            "RMSE": accuracy["RMSE"],
+            "MAE": prophet_response.get("MAE"),
+            "RMSE": prophet_response.get("RMSE"),
         }
