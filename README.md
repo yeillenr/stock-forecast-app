@@ -8,9 +8,6 @@ stock, composée de deux parties :
 - **`frontend/`** — Interface web (Next.js + TypeScript) : upload des
   fichiers, dashboard de statut de stock, visualisation des prévisions.
 
-Un jeu de données d'exemple est fourni dans `examples/` pour tester
-immédiatement l'application.
-
 ## 1. Lancer le backend
 
 ```bash
@@ -33,9 +30,8 @@ L'API est alors disponible sur `http://localhost:8000`
 Dans un second terminal :
 
 ```bash
-cd frontend
+cd frontend/app
 npm install
-cp .env.local.example .env.local
 npm run dev
 ```
 
@@ -45,8 +41,6 @@ Le fichier `.env.local` contient l'URL de l'API :
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
-Changez cette valeur si votre backend tourne ailleurs (autre port, serveur
-distant, etc.).
 
 ## 3. Utilisation
 
@@ -65,18 +59,6 @@ distant, etc.).
    - **Rupture** — stock à 0 alors que la demande est non nulle
 
 ## Format des fichiers attendus
-
-### Fichier de ventes (CSV ou Excel)
-
-| Colonne        | Obligatoire | Description                          |
-|----------------|-------------|---------------------------------------|
-| `date`         | oui         | Date de la vente (AAAA-MM-JJ)         |
-| `product_id`   | oui         | Identifiant produit / SKU             |
-| `quantity`     | oui         | Quantité vendue ce jour-là            |
-| `product_name` | non         | Nom lisible du produit                |
-
-Une ligne par jour et par produit est idéale, mais plusieurs lignes pour un
-même produit/jour sont automatiquement additionnées.
 
 > Prophet a besoin d'un minimum de **10 jours de données** par produit pour
 > produire une prévision fiable. En dessous, le produit est ignoré (et listé
