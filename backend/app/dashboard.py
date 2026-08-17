@@ -334,4 +334,6 @@ class DashboardService:
             "confidence": confidence,
             "MAE": prophet_response.get("MAE"),
             "RMSE": prophet_response.get("RMSE"),
+            "credibility_rate": prophet_response.get("credibility_rate"),
+            "days_since_last_data": prophet_response.get("days_since_last_data"),
         }

@@ -22,17 +22,30 @@ function loadStoredState(): {
 }
 
 export default function SimulationForm() {
-  const stored = loadStoredState();
-
   const [warehouses, setWarehouses] = useState<string[]>([]);
-  const [warehouse, setWarehouse] = useState(stored?.warehouse ?? "");
-  const [stock, setStock] = useState<number | "">(stored?.stock ?? "");
-  const [leadTime, setLeadTime] = useState(stored?.leadTime ?? 7);
-  const [months, setMonths] = useState(stored?.months ?? 3);
+  const [warehouse, setWarehouse] = useState("");
+  const [stock, setStock] = useState<number | "">("");
+  const [leadTime, setLeadTime] = useState(7);
+  const [months, setMonths] = useState(3);
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(stored?.result ?? null);
+  const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Ne lit le localStorage qu'après le montage côté client, pour éviter
+  // un décalage entre le HTML rendu côté serveur et celui du client.
+  useEffect(() => {
+    const stored = loadStoredState();
+    if (stored) {
+      setWarehouse(stored.warehouse ?? "");
+      setStock(stored.stock ?? "");
+      setLeadTime(stored.leadTime ?? 7);
+      setMonths(stored.months ?? 3);
+      setResult(stored.result ?? null);
+    }
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     getWarehouses()
@@ -49,12 +62,12 @@ export default function SimulationForm() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!hydrated) return;
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ warehouse, stock, leadTime, months, result })
     );
-  }, [warehouse, stock, leadTime, months, result]);
+  }, [hydrated, warehouse, stock, leadTime, months, result]);
 
   async function simulate() {
     setError(null);
@@ -177,9 +190,17 @@ export default function SimulationForm() {
                 year: "numeric",})}/>
           </div>
 
-          <div className="flex gap-4 text-xs italic text-ink-faint">
-            <span>MAE : {formatNumber(result.MAE)} Kg</span>
-            <span>RMSE : {formatNumber(result.RMSE)} Kg</span>
+          <div className="text-xs italic text-ink-faint space-y-1">
+            <div className="flex gap-4">
+              <span>MAE : {formatNumber(result.MAE)} Kg</span>
+              <span>RMSE : {formatNumber(result.RMSE)} Kg</span>
+              {result.credibility_rate != null && (
+                <span>Crédibilité : {result.credibility_rate}%</span>
+              )}
+            </div>
+            {result.days_since_last_data != null && (
+              <div>Dernière donnée il y a {result.days_since_last_data} j</div>
+            )}
           </div>
         </>
       )}

@@ -4,7 +4,7 @@
         "delivery_time": 0
     },
     "DP1602": {
-        "stock": 20000.0,
+        "stock": 20000,
         "delivery_time": 0
     }
 }

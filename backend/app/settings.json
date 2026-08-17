@@ -1,6 +1,6 @@
 {
     "DP0117": {
-        "stock": 200000.0,
+        "stock": 20000.0,
         "delivery_time": 7
     },
     "DP1602": {
@@ -8,11 +8,11 @@
         "delivery_time": 7
     },
     "DP0517": {
-        "stock": 2000.0,
+        "stock": 200000.0,
         "delivery_time": 7
     },
     "DP1608": {
-        "stock": 40000.0,
+        "stock": 20000.0,
         "delivery_time": 7
     }
 }

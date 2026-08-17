@@ -99,6 +99,10 @@ class ForecastingService:
         response = self.format_response(history, prediction, months)
         response.update(self._accuracy(model, history))
 
+        last_date = history["ds"].max()
+        days_since_last_data = (pd.Timestamp.today().normalize() - last_date).days
+        response["days_since_last_data"] = int(days_since_last_data)
+
         return response
 
     # -----------------------------------------------------
@@ -115,9 +119,17 @@ class ForecastingService:
         mae = abs(y_true - y_pred).mean()
         rmse = ((y_true - y_pred) ** 2).mean() ** 0.5
 
+        nonzero = y_true != 0
+        if nonzero.any():
+            mape = (abs(y_true[nonzero] - y_pred[nonzero]) / y_true[nonzero]).mean() * 100
+            credibility_rate = round(max(0.0, 100 - float(mape)), 1)
+        else:
+            credibility_rate = None
+
         return {
             "MAE": round(float(mae), 2),
             "RMSE": round(float(rmse), 2),
+            "credibility_rate": credibility_rate,
         }
 
     # -----------------------------------------------------
