@@ -1,8 +1,10 @@
 export interface DashboardSummary {
   warehouse: string;
   stock: number;
+  min_stock: number;
   average_consumption: number;
   autonomy: number;
+  stockout_date: string;
   delivery_time: number;
   order_in_days: number;
   quantity_to_order: number;
@@ -40,6 +42,7 @@ export interface WarehouseSettingsRequest {
   warehouse: string;
   stock: number;
   delivery_time: number;
+  min_stock: number;
 }
 
 export type StockStatusLevel = "rupture" | "critique" | "a_commander" | "ok";
@@ -47,8 +50,10 @@ export type StockStatusLevel = "rupture" | "critique" | "a_commander" | "ok";
 export interface StockStatusRow {
   warehouse: string;
   stock: number;
+  min_stock: number;
   average_consumption: number;
   autonomy: number;
+  stockout_date: string;
   delivery_time: number;
   order_in_days: number;
   quantity_to_order: number;

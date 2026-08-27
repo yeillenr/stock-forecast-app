@@ -10,6 +10,7 @@ export default function WarehouseForm() {
   const [stockStatus, setStockStatus] = useState<StockStatusRow[]>([]);
   const [stock, setStock] = useState<number | "">("");
   const [deliveryTime, setDeliveryTime] = useState<number | "">("");
+  const [minStock, setMinStock] = useState<number | "">("");
   const [loading, setLoading] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export default function WarehouseForm() {
     if (row) {
       setStock(row.stock);
       setDeliveryTime(row.delivery_time);
+      setMinStock(row.min_stock);
     }
   }, [warehouse, stockStatus]);
 
@@ -57,6 +59,7 @@ export default function WarehouseForm() {
         warehouse,
         stock: stock === "" ? 0 : stock,
         delivery_time: deliveryTime ==="" ? 0 : deliveryTime,
+        min_stock: minStock === "" ? 0 : minStock,
       });
       setSavedMessage("Paramètres enregistrés.");
     } catch (err) {
@@ -72,7 +75,7 @@ export default function WarehouseForm() {
         <div>
           <label className="block text-sm mb-2">Entrepôt</label>
           <select
-            className="w-full border border-line rounded-md p-3"
+            className="w-full border border-line rounded-md p-3 transition-colors duration-150 focus:border-brand"
             value={warehouse}
             onChange={(e) => setWarehouse(e.target.value)}
           >
@@ -89,7 +92,7 @@ export default function WarehouseForm() {
           <label className="block text-sm mb-2">Stock actuel (KG)</label>
           <input
             type="number"
-            className="w-full border border-line rounded-md p-3"
+            className="w-full border border-line rounded-md p-3 transition-colors duration-150 focus:border-brand"
             value={stock}
             onChange={(e) => setStock(e.target.value === "" ? "" : Number(e.target.value))}
           />
@@ -99,20 +102,30 @@ export default function WarehouseForm() {
           <label className="block text-sm mb-2">Délai de livraison (jours)</label>
           <input
             type="number"
-            className="w-full border border-line rounded-md p-3"
+            className="w-full border border-line rounded-md p-3 transition-colors duration-150 focus:border-brand"
             value={deliveryTime}
             onChange={(e) => setDeliveryTime(Number(e.target.value))}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-2">Stock minimum (KG)</label>
+          <input
+            type="number"
+            className="w-full border border-line rounded-md p-3 transition-colors duration-150 focus:border-brand"
+            value={minStock}
+            onChange={(e) => setMinStock(e.target.value === "" ? "" : Number(e.target.value))}
           />
         </div>
       </div>
 
       {error && (
-        <div className="mt-6 rounded-xl border border-status-criticalSoft bg-status-criticalSoft/10 px-4 py-3 text-sm text-status-critical">
+        <div className="animate-fade-in mt-6 rounded-xl border border-status-criticalSoft bg-status-criticalSoft/10 px-4 py-3 text-sm text-status-critical">
           {error}
         </div>
       )}
       {savedMessage && (
-        <div className="mt-6 rounded-xl border border-status-ctaSoft bg-status-ctaSoft/10 px-4 py-3 text-sm text-status-cta">
+        <div className="animate-fade-in mt-6 rounded-xl border border-status-ctaSoft bg-status-ctaSoft/10 px-4 py-3 text-sm text-status-cta">
           {savedMessage}
         </div>
       )}
@@ -120,7 +133,7 @@ export default function WarehouseForm() {
       <button
         onClick={save}
         disabled={loading}
-        className="mt-8 inline-flex items-center justify-center rounded-lg bg-brand px-5 py-3 text-white disabled:opacity-60"
+        className="mt-8 inline-flex items-center justify-center rounded-lg bg-brand px-5 py-3 text-white transition-all duration-200 hover:bg-brand-dark hover:shadow-md active:scale-[0.98] disabled:opacity-60 disabled:hover:bg-brand disabled:active:scale-100"
       >
         {loading ? "Enregistrement..." : "Enregistrer"}
       </button>

@@ -28,12 +28,7 @@ export default function ForecastPage() {
     }
   }
 
-  const chartData = forecastData?.forecast.map((item) => ({
-    ds: item.date,
-    yhat: item.prediction,
-    yhat_lower: item.lower,
-    yhat_upper: item.upper,
-  })) ?? [];
+  const chartData = forecastData?.forecast ?? [];
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 md:px-10">

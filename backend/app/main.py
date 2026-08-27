@@ -16,6 +16,7 @@ class WarehouseSettings(BaseModel):
     warehouse: str
     stock: float
     delivery_time: int
+    min_stock: float = 0
 
 
 class ForecastRequest(BaseModel):
@@ -27,6 +28,8 @@ class SimulationRequest(BaseModel):
     warehouse: Optional[str] = None
     current_stock: Optional[float] = None
     lead_time: Optional[int] = None
+    min_stock: Optional[float] = None
+    reference_date: Optional[str] = None
     months: int = 3
 
 
@@ -118,6 +121,7 @@ def sales(warehouse: Optional[str] = Query(default=None)):
 def update_settings(settings: WarehouseSettings):
     dashboard.update_stock(settings.warehouse, settings.stock)
     dashboard.update_delivery_time(settings.warehouse, settings.delivery_time)
+    dashboard.update_min_stock(settings.warehouse, settings.min_stock)
     return {
         "success": True,
         "message": "Paramètres enregistrés.",
@@ -131,6 +135,8 @@ def simulation(request: SimulationRequest):
         warehouse=request.warehouse,
         current_stock=request.current_stock,
         lead_time=request.lead_time,
+        min_stock=request.min_stock,
+        reference_date=request.reference_date,
         months=request.months,
     )
 
@@ -141,5 +147,5 @@ def get_metrics():
     return {
         "MAE": metrics["MAE"],
         "RMSE": metrics["RMSE"],
-        "R2": metrics["R2"]
+        "credibility_rate": metrics["credibility_rate"],
     }

@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   PackageX,
   ShoppingCart,
+  History,
 } from "lucide-react";
 
 import {
@@ -112,7 +113,13 @@ export default function DashboardPage() {
       <section className="bg-white rounded-xl p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
           <div>
-            <h2 className="text-xl font-semibold">Activité de stockage</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-semibold">Activité de stockage</h2>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-canvas px-3 py-1 text-xs font-medium text-ink-soft">
+                <History className="w-3.5 h-3.5" strokeWidth={2.2} />
+                Basé sur l'historique
+              </span>
+            </div>
             <p className="text-sm text-ink-faint mt-1">Historique des ventes et niveaux de stock à partir des données importées.</p>
           </div>
 
@@ -134,19 +141,21 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <div className="bg-surface border border-line rounded-2xl p-5">
+          <div className="bg-surface border border-line rounded-2xl p-5 transition-shadow duration-200 hover:shadow-md">
             <h3 className="text-base font-semibold mb-4">Historique des ventes</h3>
             {salesError ? (
               <div className="text-status-critical text-sm">{salesError}</div>
             ) : salesLoading ? (
               <div className="text-sm text-ink-faint">Chargement de l'historique...</div>
             ) : salesHistory.length > 0 ? (
-              <HistoryChart data={salesHistory} />
+              <div className="animate-fade-in">
+                <HistoryChart data={salesHistory} />
+              </div>
             ) : (
               <div className="text-sm text-ink-faint">Aucune vente disponible.</div>
             )}
           </div>
-          <div className="bg-surface border border-line rounded-2xl p-5">
+          <div className="bg-surface border border-line rounded-2xl p-5 transition-shadow duration-200 hover:shadow-md">
             <h3 className="text-base font-semibold mb-4">Niveaux de stock</h3>
             <StockLevelsChart rows={rows} />
           </div>
@@ -154,7 +163,13 @@ export default function DashboardPage() {
       </section>
 
       <section className="bg-white rounded-xl p-6 shadow-sm">
-        <h2 className="text-xl font-semibold mb-5">Produits critiques</h2>
+        <div className="flex items-center gap-2 flex-wrap mb-5">
+          <h2 className="text-xl font-semibold">Produits critiques</h2>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-canvas px-3 py-1 text-xs font-medium text-ink-soft">
+            <History className="w-3.5 h-3.5" strokeWidth={2.2} />
+            Basé sur l'historique
+          </span>
+        </div>
         <StockStatusTable rows={rows} />
       </section>
 

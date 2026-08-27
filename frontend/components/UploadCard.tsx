@@ -92,7 +92,7 @@ export default function UploadCard({
 
       {message && (
         <div
-          className={`mt-3 flex items-start gap-2 text-sm rounded-md px-3 py-2 ${
+          className={`animate-fade-in mt-3 flex items-start gap-2 text-sm rounded-md px-3 py-2 ${
             state === "success"
               ? "bg-status-okSoft text-status-ok"
               : "bg-status-criticalSoft text-status-critical"

@@ -1,16 +1,12 @@
-import os
-import joblib
 import pandas as pd
 
 from prophet import Prophet
-from sklearn.metrics import r2_score
+
+CHANGEPOINT_SCALE_CANDIDATES = [0.05, 0.1, 0.2]
+MIN_RELIABLE_MONTHS = 6
 
 
 class ForecastingService:
-
-    def __init__(self):
-        self.model_path = "models/prophet_model.pkl"
-        os.makedirs("models", exist_ok=True)
 
     # -----------------------------------------------------
     # Préparation des données
@@ -42,79 +38,26 @@ class ForecastingService:
         return df
 
     # -----------------------------------------------------
-    # Entrainement
+    # Construction d'un modèle Prophet
     # -----------------------------------------------------
 
-    def train_model(self, dataframe):
-        prophet_df = self.prepare_data(dataframe)
-
-        split = int(len(prophet_df) * 0.8)
-
-        train = prophet_df.iloc[:split]
-        test = prophet_df.iloc[split:]
-
-        model = Prophet(
-            yearly_seasonality=True,
-            weekly_seasonality=True,
+    def _build_model(self, changepoint_prior_scale):
+        return Prophet(
+            yearly_seasonality="auto",
+            weekly_seasonality=False,
             daily_seasonality=False,
-            changepoint_prior_scale=0.2,
+            changepoint_prior_scale=changepoint_prior_scale,
             seasonality_prior_scale=10,
         )
 
-        model.fit(train)
-
-        joblib.dump(model, self.model_path)
-
-        return True
-
     # -----------------------------------------------------
-    # Chargement
+    # Précision (MAE / RMSE / crédibilité) à partir de
+    # prédictions déjà calculées
     # -----------------------------------------------------
 
-    def load_model(self):
-        if not os.path.exists(self.model_path):
-            raise Exception(
-                "Le modèle n'a pas encore été entraîné."
-            )
-
-        return joblib.load(self.model_path)
-
-    # -----------------------------------------------------
-    # Prévision
-    # -----------------------------------------------------
-
-    def forecast(self, dataframe, months=3):
-        self.train_model(dataframe)
-        model = self.load_model()
-
-        history = self.prepare_data(dataframe)
-
-        future = model.make_future_dataframe(
-            periods=months,
-            freq="MS"
-        )
-
-        prediction = model.predict(future)
-
-        response = self.format_response(history, prediction, months)
-        response.update(self._accuracy(model, history))
-
-        last_date = history["ds"].max()
-        days_since_last_data = (pd.Timestamp.today().normalize() - last_date).days
-        response["days_since_last_data"] = int(days_since_last_data)
-
-        return response
-
-    # -----------------------------------------------------
-    # Précision (MAE / RMSE) sur l'historique, à partir
-    # d'un modèle déjà entraîné (pas de ré-entrainement)
-    # -----------------------------------------------------
-
-    def _accuracy(self, model, history):
-        prediction = model.predict(history[["ds"]])
-
-        y_true = history["y"]
-        y_pred = prediction["yhat"]
+    def _accuracy_from_predictions(self, y_true, y_pred):
+        y_true = y_true.reset_index(drop=True)
+        y_pred = y_pred.reset_index(drop=True)
 
         mae = abs(y_true - y_pred).mean()
         rmse = ((y_true - y_pred) ** 2).mean() ** 0.5
@@ -131,6 +74,82 @@ class ForecastingService:
             "RMSE": round(float(rmse), 2),
             "credibility_rate": credibility_rate,
         }
+
+    # -----------------------------------------------------
+    # Sélection du meilleur modèle par backtest, puis
+    # ré-entrainement de la config gagnante sur tout
+    # l'historique pour la prévision finale
+    # -----------------------------------------------------
+
+    def _select_best_model(self, dataframe):
+        prophet_df = self.prepare_data(dataframe)
+
+        split = int(len(prophet_df) * 0.8)
+        train = prophet_df.iloc[:split]
+        test = prophet_df.iloc[split:]
+
+        if len(train) < 2 or len(test) == 0:
+            model = self._build_model(CHANGEPOINT_SCALE_CANDIDATES[0])
+            model.fit(prophet_df)
+            return model, None
+
+        best = None
+        for scale in CHANGEPOINT_SCALE_CANDIDATES:
+            candidate = self._build_model(scale)
+            candidate.fit(train)
+
+            prediction = candidate.predict(test[["ds"]])
+            y_true = test["y"]
+            y_pred = prediction["yhat"]
+            rmse = float(((y_true - y_pred) ** 2).mean() ** 0.5)
+
+            if best is None or rmse < best["rmse"]:
+                best = {
+                    "scale": scale,
+                    "rmse": rmse,
+                    "y_true": y_true,
+                    "y_pred": y_pred,
+                }
+
+        accuracy = self._accuracy_from_predictions(best["y_true"], best["y_pred"])
+
+        final_model = self._build_model(best["scale"])
+        final_model.fit(prophet_df)
+
+        return final_model, accuracy
+
+    # -----------------------------------------------------
+    # Prévision
+    # -----------------------------------------------------
+
+    def forecast(self, dataframe, months=3):
+        model, accuracy = self._select_best_model(dataframe)
+
+        history = self.prepare_data(dataframe)
+
+        future = model.make_future_dataframe(
+            periods=months,
+            freq="MS"
+        )
+
+        prediction = model.predict(future)
+
+        response = self.format_response(history, prediction, months)
+
+        if accuracy is None:
+            in_sample = model.predict(history[["ds"]])
+            accuracy = self._accuracy_from_predictions(history["y"], in_sample["yhat"])
+
+        response.update(accuracy)
+
+        last_date = history["ds"].max()
+        days_since_last_data = (pd.Timestamp.today().normalize() - last_date).days
+        response["days_since_last_data"] = int(days_since_last_data)
+
+        response["history_months"] = len(history)
+        response["low_data_warning"] = len(history) < MIN_RELIABLE_MONTHS
+
+        return response
 
     # -----------------------------------------------------
     # Format JSON
@@ -165,26 +184,9 @@ class ForecastingService:
     # -----------------------------------------------------
 
     def evaluate(self, dataframe):
-        self.train_model(dataframe)
-        model = self.load_model()
+        _, accuracy = self._select_best_model(dataframe)
 
-        prophet_df = self.prepare_data(dataframe)
+        if accuracy is None:
+            return {"MAE": None, "RMSE": None, "credibility_rate": None}
 
-        prediction = model.predict(
-            prophet_df[["ds"]]
-        )
-
-        y_true = prophet_df["y"]
-        y_pred = prediction["yhat"]
-
-        mae = abs(y_true - y_pred).mean()
-
-        rmse = ((y_true - y_pred) ** 2).mean() ** 0.5
-
-        r2 = r2_score(y_true, y_pred)
-
-        return {
-            "MAE": round(float(mae), 2),
-            "RMSE": round(float(rmse), 2),
-            "R2": round(float(r2), 4)
-        }
+        return accuracy

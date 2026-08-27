@@ -53,6 +53,7 @@ export async function updateWarehouseSettings(data: {
   warehouse: string;
   stock: number;
   delivery_time: number;
+  min_stock: number;
 }) {
   const res = await fetch(`${API_BASE}/warehouse/settings`, {
     method: "POST",
@@ -68,6 +69,8 @@ export interface SimulationRequest {
   warehouse?: string;
   current_stock?: number;
   lead_time?: number;
+  min_stock?: number;
+  reference_date?: string;
   months: number;
 }
 

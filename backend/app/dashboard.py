@@ -49,6 +49,15 @@ class DashboardService:
 
     # -----------------------------------
 
+    def update_min_stock(self, warehouse, min_stock):
+        settings = self.load_settings()
+        if warehouse not in settings:
+            settings[warehouse] = {}
+        settings[warehouse]["min_stock"] = min_stock
+        self.save_settings(settings)
+
+    # -----------------------------------
+
     def get_stock(self, warehouse):
         settings = self.load_settings()
         return settings.get(warehouse, {}).get("stock", 0)
@@ -58,6 +67,12 @@ class DashboardService:
     def get_delivery_time(self, warehouse):
         settings = self.load_settings()
         return settings.get(warehouse, {}).get("delivery_time", 0)
+
+    # -----------------------------------
+
+    def get_min_stock(self, warehouse):
+        settings = self.load_settings()
+        return settings.get(warehouse, {}).get("min_stock", 0)
 
     # -----------------------------------
     # HISTORIQUE DES VENTES
@@ -111,12 +126,14 @@ class DashboardService:
 
     def autonomy(self, dataframe, warehouse):
         stock = float(self.get_stock(warehouse))
+        min_stock = float(self.get_min_stock(warehouse))
+        usable_stock = max(stock - min_stock, 0)
         average = self.average_consumption(dataframe, warehouse)
 
         if average <= 0:
             return 0
 
-        return int(round(stock / average))
+        return int(round(usable_stock / average))
 
     # -----------------------------------
     # DATE COMMANDE
@@ -133,13 +150,14 @@ class DashboardService:
 
     def quantity_to_order(self, dataframe, warehouse):
         stock = float(self.get_stock(warehouse))
+        min_stock = float(self.get_min_stock(warehouse))
         average = self.average_consumption(dataframe, warehouse)
         delivery = float(self.get_delivery_time(warehouse))
 
         if average <= 0:
             return 0.0
 
-        target = average * (delivery + 30)
+        target = average * (delivery + 30) + min_stock
         quantity = target - stock
 
         return round(max(quantity, 0), 2)
@@ -149,11 +167,14 @@ class DashboardService:
     # -----------------------------------
 
     def dashboard_summary(self, dataframe, warehouse):
+        autonomy = self.autonomy(dataframe, warehouse)
         return {
             "warehouse": warehouse,
             "stock": self.get_stock(warehouse),
+            "min_stock": self.get_min_stock(warehouse),
             "average_consumption": self.average_consumption(dataframe, warehouse),
-            "autonomy": self.autonomy(dataframe, warehouse),
+            "autonomy": autonomy,
+            "stockout_date": (date.today() + timedelta(days=autonomy)).isoformat(),
             "delivery_time": self.get_delivery_time(warehouse),
             "order_in_days": self.reorder_days(dataframe, warehouse),
             "quantity_to_order": self.quantity_to_order(dataframe, warehouse)
@@ -209,6 +230,8 @@ class DashboardService:
         warehouse=None,
         current_stock=None,
         lead_time=None,
+        min_stock=None,
+        reference_date=None,
         months=3,
     ):
         if not warehouse:
@@ -218,6 +241,7 @@ class DashboardService:
                 "quantity_to_order": 0,
                 "remaining_stock": 0,
                 "risk": "unknown",
+                "stockout_date": None,
                 "forecast_date": None,
                 "forecast": [],
             }
@@ -227,6 +251,9 @@ class DashboardService:
 
         if lead_time is not None:
             self.update_delivery_time(warehouse, lead_time)
+
+        if min_stock is not None:
+            self.update_min_stock(warehouse, min_stock)
 
         stock = float(
             current_stock
@@ -238,6 +265,18 @@ class DashboardService:
             lead_time
             if lead_time is not None
             else self.get_delivery_time(warehouse)
+        )
+
+        min_stock_value = float(
+            min_stock
+            if min_stock is not None
+            else self.get_min_stock(warehouse)
+        )
+
+        ref_date = (
+            date.fromisoformat(reference_date)
+            if reference_date
+            else date.today()
         )
 
         forecast_service = ForecastingService()
@@ -257,6 +296,7 @@ class DashboardService:
                 "quantity_to_order": 0,
                 "remaining_stock": 0,
                 "risk": "unknown",
+                "stockout_date": None,
                 "forecast_date": None,
                 "forecast": [],
                 "error": str(exc),
@@ -292,11 +332,13 @@ class DashboardService:
         days_of_forecast = max(months * 30, 1)
         daily_forecast = adjusted / days_of_forecast
         safety_stock = round(daily_forecast * delivery, 2)
-        target = round(predicted + safety_stock, 2)
+        target = round(predicted + safety_stock + min_stock_value, 2)
         qty = round(max(target - stock, 0), 2)
 
+        usable_stock = max(stock - min_stock_value, 0)
+
         if daily_forecast > 0:
-            remaining_days = int(stock / daily_forecast)
+            remaining_days = int(usable_stock / daily_forecast)
         else:
             remaining_days = 0
 
@@ -317,8 +359,13 @@ class DashboardService:
             risk = "medium"
         else:
             risk = "low"
-        forecast_date = (
-            date.today() + timedelta(days=remaining_days)
+
+        order_in_days = max(remaining_days - delivery, 0)
+        stockout_date = (
+            ref_date + timedelta(days=remaining_days)
+        ).isoformat()
+        order_date = (
+            ref_date + timedelta(days=order_in_days)
         ).isoformat()
 
         return {
@@ -327,7 +374,8 @@ class DashboardService:
             "quantity_to_order": int(qty),
             "remaining_stock": int(remaining_days),
             "risk": risk,
-            "forecast_date": forecast_date,
+            "stockout_date": stockout_date,
+            "forecast_date": order_date,
             "lower_demand": int(lower_demand),
             "upper_demand": int(upper_demand),
             "forecast_uncertainty": round(uncertainty, 2),
@@ -336,4 +384,6 @@ class DashboardService:
             "RMSE": prophet_response.get("RMSE"),
             "credibility_rate": prophet_response.get("credibility_rate"),
             "days_since_last_data": prophet_response.get("days_since_last_data"),
+            "history_months": prophet_response.get("history_months"),
+            "low_data_warning": prophet_response.get("low_data_warning"),
         }
