@@ -1,9 +1,15 @@
+import json
+import os
+
 import pandas as pd
 
 from prophet import Prophet
 
-CHANGEPOINT_SCALE_CANDIDATES = [0.05, 0.1, 0.2]
 MIN_RELIABLE_MONTHS = 6
+
+HYPERPARAMETERS_PATH = "model_hyperparameters.json"
+DEFAULT_CHANGEPOINT_PRIOR_SCALE = 0.05
+DEFAULT_SEASONALITY_PRIOR_SCALE = 10.0
 
 
 class ForecastingService:
@@ -35,19 +41,45 @@ class ForecastingService:
 
         df.columns = ["ds", "y"]
 
+        # Le split train/test doit être chronologique, pas aléatoire :
+        # on garantit explicitement l'ordre plutôt que de compter sur
+        # le comportement implicite de groupby/Grouper.
+        df = df.sort_values("ds").reset_index(drop=True)
+
         return df
 
     # -----------------------------------------------------
     # Construction d'un modèle Prophet
     # -----------------------------------------------------
 
-    def _build_model(self, changepoint_prior_scale):
+    def _build_model(self, changepoint_prior_scale, seasonality_prior_scale):
         return Prophet(
             yearly_seasonality="auto",
             weekly_seasonality=False,
             daily_seasonality=False,
             changepoint_prior_scale=changepoint_prior_scale,
-            seasonality_prior_scale=10,
+            seasonality_prior_scale=seasonality_prior_scale,
+        )
+
+    # -----------------------------------------------------
+    # Hyperparamètres par entrepôt, choisis hors-ligne par
+    # validation croisée (voir analysis/select_hyperparameters.py)
+    # -----------------------------------------------------
+
+    def _hyperparameters_for(self, warehouse):
+        if not os.path.exists(HYPERPARAMETERS_PATH):
+            return DEFAULT_CHANGEPOINT_PRIOR_SCALE, DEFAULT_SEASONALITY_PRIOR_SCALE
+
+        with open(HYPERPARAMETERS_PATH, "r", encoding="utf-8") as f:
+            all_params = json.load(f)
+
+        params = all_params.get(warehouse)
+        if not params:
+            return DEFAULT_CHANGEPOINT_PRIOR_SCALE, DEFAULT_SEASONALITY_PRIOR_SCALE
+
+        return (
+            params.get("changepoint_prior_scale", DEFAULT_CHANGEPOINT_PRIOR_SCALE),
+            params.get("seasonality_prior_scale", DEFAULT_SEASONALITY_PRIOR_SCALE),
         )
 
     # -----------------------------------------------------
@@ -76,44 +108,32 @@ class ForecastingService:
         }
 
     # -----------------------------------------------------
-    # Sélection du meilleur modèle par backtest, puis
-    # ré-entrainement de la config gagnante sur tout
-    # l'historique pour la prévision finale
+    # Entrainement avec les hyperparamètres fixés pour cet
+    # entrepôt (choisis hors-ligne), puis évaluation sur un
+    # split chronologique avant le ré-entrainement final sur
+    # tout l'historique
     # -----------------------------------------------------
 
-    def _select_best_model(self, dataframe):
+    def _fit_and_evaluate(self, dataframe, warehouse):
         prophet_df = self.prepare_data(dataframe)
+        changepoint_scale, seasonality_scale = self._hyperparameters_for(warehouse)
 
         split = int(len(prophet_df) * 0.8)
         train = prophet_df.iloc[:split]
         test = prophet_df.iloc[split:]
 
         if len(train) < 2 or len(test) == 0:
-            model = self._build_model(CHANGEPOINT_SCALE_CANDIDATES[0])
+            model = self._build_model(changepoint_scale, seasonality_scale)
             model.fit(prophet_df)
             return model, None
 
-        best = None
-        for scale in CHANGEPOINT_SCALE_CANDIDATES:
-            candidate = self._build_model(scale)
-            candidate.fit(train)
+        eval_model = self._build_model(changepoint_scale, seasonality_scale)
+        eval_model.fit(train)
 
-            prediction = candidate.predict(test[["ds"]])
-            y_true = test["y"]
-            y_pred = prediction["yhat"]
-            rmse = float(((y_true - y_pred) ** 2).mean() ** 0.5)
+        prediction = eval_model.predict(test[["ds"]])
+        accuracy = self._accuracy_from_predictions(test["y"], prediction["yhat"])
 
-            if best is None or rmse < best["rmse"]:
-                best = {
-                    "scale": scale,
-                    "rmse": rmse,
-                    "y_true": y_true,
-                    "y_pred": y_pred,
-                }
-
-        accuracy = self._accuracy_from_predictions(best["y_true"], best["y_pred"])
-
-        final_model = self._build_model(best["scale"])
+        final_model = self._build_model(changepoint_scale, seasonality_scale)
         final_model.fit(prophet_df)
 
         return final_model, accuracy
@@ -122,8 +142,8 @@ class ForecastingService:
     # Prévision
     # -----------------------------------------------------
 
-    def forecast(self, dataframe, months=3):
-        model, accuracy = self._select_best_model(dataframe)
+    def forecast(self, dataframe, months=3, warehouse=None):
+        model, accuracy = self._fit_and_evaluate(dataframe, warehouse)
 
         history = self.prepare_data(dataframe)
 
@@ -183,8 +203,8 @@ class ForecastingService:
     # Evaluation
     # -----------------------------------------------------
 
-    def evaluate(self, dataframe):
-        _, accuracy = self._select_best_model(dataframe)
+    def evaluate(self, dataframe, warehouse=None):
+        _, accuracy = self._fit_and_evaluate(dataframe, warehouse)
 
         if accuracy is None:
             return {"MAE": None, "RMSE": None, "credibility_rate": None}

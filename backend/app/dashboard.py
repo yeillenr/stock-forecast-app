@@ -288,6 +288,7 @@ class DashboardService:
             prophet_response = forecast_service.forecast(
                 dataframe=filtered_data,
                 months=months,
+                warehouse=warehouse,
             )
         except Exception as exc:
             return {

@@ -1,0 +1,32 @@
+{
+  "DP0117": {
+    "changepoint_prior_scale": 0.05,
+    "seasonality_prior_scale": 1,
+    "cv_rmse": 714868.8992979098,
+    "cv_mape": 53.33843079374733,
+    "cv_skipped": false,
+    "history_months": 28
+  },
+  "DP0517": {
+    "changepoint_prior_scale": 0.2,
+    "seasonality_prior_scale": 1,
+    "cv_rmse": 206123.20671090498,
+    "cv_mape": 22.696129466587063,
+    "cv_skipped": false,
+    "history_months": 28
+  },
+  "DP1602": {
+    "changepoint_prior_scale": 0.05,
+    "seasonality_prior_scale": 1,
+    "cv_rmse": 53623.02872364329,
+    "cv_mape": 98.38986664910068,
+    "cv_skipped": false,
+    "history_months": 24
+  },
+  "DP1608": {
+    "changepoint_prior_scale": 0.05,
+    "seasonality_prior_scale": 10.0,
+    "cv_skipped": true,
+    "history_months": 4
+  }
+}

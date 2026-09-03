@@ -95,7 +95,7 @@ def forecast_route(request: ForecastRequest):
     data = store.load_cleaned_data()
     if request.warehouse:
         data = data[data["Entrepôt"] == request.warehouse]
-    return forecast.forecast(dataframe=data, months=request.months)
+    return forecast.forecast(dataframe=data, months=request.months, warehouse=request.warehouse)
 
 @app.get("/warehouses")
 def list_warehouses():
