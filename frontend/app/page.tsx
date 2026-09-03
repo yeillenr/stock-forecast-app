@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, ChangeEvent } from "react";
+import { useCallback, useEffect, useState, ChangeEvent } from "react";
 
 import {
   Boxes,
   AlertTriangle,
   PackageX,
   ShoppingCart,
-  History,
 } from "lucide-react";
 
 import {
@@ -28,38 +27,28 @@ export default function DashboardPage() {
   const [rows, setRows] = useState<StockStatusRow[]>([]);
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [salesWarehouse, setSalesWarehouse] = useState("");
-  const [salesHistory, setSalesHistory] = useState<{ date: string; quantity: number }[]>([]);
+  const [salesHistory, setSalesHistory] = useState<{ date: string; quantity: number; incomplete?: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
   const [salesLoading, setSalesLoading] = useState(false);
   const [error, setError] = useState("");
   const [salesError, setSalesError] = useState("");
-  const hasLoaded = useRef(false);
 
-  useEffect(() => {
-    if (hasLoaded.current) return;
-    hasLoaded.current = true;
-
+  const loadStatus = useCallback(async (warehouse?: string) => {
     setLoading(true);
-    getStockStatus()
-      .then(setRows)
-      .catch((err) => {
-        setError(err instanceof ApiRequestError ? err.message : "Erreur lors du chargement du statut de stock.");
-      })
-      .finally(() => setLoading(false));
-
-    getWarehouses()
-      .then(setWarehouses)
-      .catch(() => {
-        // ignore warehouse list error
-      });
-
-    fetchSalesHistory();
+    setError("");
+    try {
+      const data = await getStockStatus(warehouse);
+      setRows(data);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Erreur lors du chargement du statut de stock.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  async function fetchSalesHistory(warehouse?: string) {
+  const fetchSalesHistory = useCallback(async (warehouse?: string) => {
     setSalesLoading(true);
     setSalesError("");
-
     try {
       const data = await getSalesHistory(warehouse);
       setSalesHistory(data);
@@ -69,11 +58,22 @@ export default function DashboardPage() {
     } finally {
       setSalesLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    getWarehouses()
+      .then(setWarehouses)
+      .catch(() => {
+        // liste optionnelle
+      });
+    loadStatus();
+    fetchSalesHistory();
+  }, [loadStatus, fetchSalesHistory]);
 
   const handleWarehouseChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const nextWarehouse = event.target.value;
     setSalesWarehouse(nextWarehouse);
+    loadStatus(nextWarehouse || undefined);
     fetchSalesHistory(nextWarehouse || undefined);
   };
 
@@ -84,24 +84,22 @@ export default function DashboardPage() {
     commande: rows.filter((r) => r.status === "a_commander").length,
   };
 
+  const incompleteMonth = salesHistory.some((point) => point.incomplete);
+
   return (
     <div className="space-y-8 p-8">
-
       <div>
-        <h1 className="text-3xl font-bold">
-          Tableau de bord
-        </h1>
-
+        <h1 className="text-3xl font-bold">Tableau de bord</h1>
         <p className="text-gray-500 mt-2">
-          Vue globale de votre activité de stockage.
+          Statut de stock dérivé de la demande prévue, pas seulement de la moyenne historique.
         </p>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
-        <StatCard icon={Boxes} label="Entrepôts" value={stats.total} />
-        <StatCard icon={ShoppingCart} label="A commander" value={stats.commande} tone="warning" />
-        <StatCard icon={AlertTriangle} label="Critiques" value={stats.critique} tone="critical" />
-        <StatCard icon={PackageX} label="Ruptures" value={stats.rupture} tone="critical" />
+        <StatCard icon={Boxes} label="Entrepôts" value={loading ? "…" : stats.total} />
+        <StatCard icon={ShoppingCart} label="À commander" value={loading ? "…" : stats.commande} tone="warning" />
+        <StatCard icon={AlertTriangle} label="Critiques" value={loading ? "…" : stats.critique} tone="critical" />
+        <StatCard icon={PackageX} label="Ruptures" value={loading ? "…" : stats.rupture} tone="critical" />
       </div>
 
       {error && (
@@ -110,17 +108,19 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {incompleteMonth && (
+        <div className="rounded-2xl border border-status-watchSoft bg-status-watchSoft/20 px-4 py-3 text-sm text-status-watch">
+          Le dernier mois de l&apos;historique est incomplet : il est affiché sur la courbe mais exclu de l&apos;entraînement et des dates de rupture.
+        </div>
+      )}
+
       <section className="bg-white rounded-xl p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-semibold">Activité de stockage</h2>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-canvas px-3 py-1 text-xs font-medium text-ink-soft">
-                <History className="w-3.5 h-3.5" strokeWidth={2.2} />
-                Basé sur l'historique
-              </span>
-            </div>
-            <p className="text-sm text-ink-faint mt-1">Historique des ventes et niveaux de stock à partir des données importées.</p>
+            <h2 className="text-xl font-semibold">Activité de stockage</h2>
+            <p className="text-sm text-ink-faint mt-1">
+              Filtre appliqué aux ventes, aux niveaux de stock et au tableau de statut.
+            </p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -146,7 +146,7 @@ export default function DashboardPage() {
             {salesError ? (
               <div className="text-status-critical text-sm">{salesError}</div>
             ) : salesLoading ? (
-              <div className="text-sm text-ink-faint">Chargement de l'historique...</div>
+              <div className="text-sm text-ink-faint">Chargement de l&apos;historique...</div>
             ) : salesHistory.length > 0 ? (
               <div className="animate-fade-in">
                 <HistoryChart data={salesHistory} />
@@ -163,16 +163,13 @@ export default function DashboardPage() {
       </section>
 
       <section className="bg-white rounded-xl p-6 shadow-sm">
-        <div className="flex items-center gap-2 flex-wrap mb-5">
-          <h2 className="text-xl font-semibold">Produits critiques</h2>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-canvas px-3 py-1 text-xs font-medium text-ink-soft">
-            <History className="w-3.5 h-3.5" strokeWidth={2.2} />
-            Basé sur l'historique
-          </span>
-        </div>
-        <StockStatusTable rows={rows} />
+        <h2 className="text-xl font-semibold mb-5">Statut des entrepôts</h2>
+        {loading ? (
+          <div className="text-sm text-ink-faint py-10 text-center">Calcul des trajectoires de stock...</div>
+        ) : (
+          <StockStatusTable rows={rows} />
+        )}
       </section>
-
     </div>
   );
 }

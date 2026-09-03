@@ -35,6 +35,7 @@ export default function StockStatusTable({ rows }: { rows: StockStatusRow[] }) {
             <th className="py-2.5 pr-4 font-medium">Consommation moyenne / jour (Kg)</th>
             <th className="py-2.5 pr-4 font-medium">Date de rupture</th>
             <th className="py-2.5 pr-4 font-medium">À commander dans</th>
+            <th className="py-2.5 pr-4 font-medium">Quantité à commander</th>
             <th className="py-2.5 pr-4 font-medium">Statut</th>
           </tr>
         </thead>
@@ -47,6 +48,7 @@ export default function StockStatusTable({ rows }: { rows: StockStatusRow[] }) {
               <td className="py-3 pr-4 font-mono">{formatNumber(row.average_consumption)}</td>
               <td className="py-3 pr-4 font-mono">{formatDate(row.stockout_date)}</td>
               <td className="py-3 pr-4 font-mono">{formatNumber(row.order_in_days)} j</td>
+              <td className="py-3 pr-4 font-mono">{formatNumber(row.quantity_to_order)}</td>
               <td className="py-3 pr-4">
                 <StatusBadge status={row.status} />
               </td>

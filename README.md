@@ -1,12 +1,9 @@
-# Stockflow — Prévision des ventes & optimisation des stocks
+# Stockflow — Prévision de la demande et trajectoire de stock
 
-Application de prévision des ventes (Prophet) et de suivi de couverture de
-stock, composée de deux parties :
+Application de suivi de couverture de stock, composée de :
 
-- **`backend/`** — API Python (FastAPI) : import des données, entraînement
-  Prophet par produit, calcul du statut de stock.
-- **`frontend/`** — Interface web (Next.js + TypeScript) : upload des
-  fichiers, dashboard de statut de stock, visualisation des prévisions.
+- **`backend/`** — API Python (FastAPI) : import des mouvements D365, prévision de demande (Prophet seulement s'il bat une baseline), simulation d'inventaire.
+- **`frontend/`** — Interface web (Next.js + TypeScript).
 
 ## 1. Lancer le backend
 
@@ -18,78 +15,55 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000 --app-dir app
 ```
 
-L'API est alors disponible sur `http://localhost:8000`
-(documentation interactive sur `http://localhost:8000/docs`).
+L'API est disponible sur `http://localhost:8000` (`/docs` pour l'OpenAPI).
 
-> **Note sur Prophet** : l'installation peut prendre quelques minutes car
-> Prophet dépend de `cmdstanpy`, qui compile un binaire Stan à l'installation.
-> C'est normal, laissez l'installation se terminer.
+Python 3.13 est supporté (`pandas` récent, sans `pyarrow` piné).
 
 ## 2. Lancer le frontend
 
-Dans un second terminal :
-
 ```bash
-cd frontend/app
+cd frontend
 npm install
 npm run dev
 ```
 
-L'application est disponible sur `http://localhost:3000`.
+Application : `http://localhost:3000`.
 
-Le fichier `.env.local` contient l'URL de l'API :
+URL de l'API, dans `frontend/.env.local` si besoin :
+
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ## 3. Utilisation
 
-1. **Importer** (`/upload`) : importez votre historique de ventes, puis votre
-   stock actuel.
-2. **Prévisions** (`/forecast`) : choisissez un horizon (1 à 12 mois) et
-   lancez la prévision. Un modèle Prophet est entraîné indépendamment pour
-   chaque produit détecté dans les ventes. Consultez la courbe par produit.
-3. **Statut du stock** (`/`) : une fois une prévision calculée, cette page
-   affiche pour chaque produit sa couverture en jours (stock actuel ÷ demande
-   moyenne prédite) et un statut :
-   - **OK** — stock confortable
-   - **À commander** — sous le seuil de réapprovisionnement
-   - **Critique** — la couverture ne dépasse plus le délai de livraison
-   - **Rupture** — stock à 0 alors que la demande est non nulle
+1. **Données** (`/upload`) : Excel/CSV D365. Colonnes minimales : `Date physique`, `Quantité`, `Entrepôt`. `Réception` et `Stock en sortie` permettent de distinguer ventes, achats et transferts.
+2. **Entrepôts** (`/warehouses`) : stock actuel, délai, stock min. Ces valeurs ne sont **pas** écrasées par une simulation.
+3. **Prévisions** (`/forecast`) : hold-out chronologique, mois incomplets exclus. Prophet n'est servi que s'il bat une naïve / moyenne.
+4. **Simulateur** : trajectoire de stock P10 / P50 / P90 (demande haute / médiane / basse).
+5. **Tableau de bord** : statut dérivé de cette trajectoire (rupture / critique / à commander / OK).
 
-## Format des fichiers attendus
+## Méthode (demande et stock)
 
-> Prophet a besoin d'un minimum de **10 jours de données** par produit pour
-> produire une prévision fiable. En dessous, le produit est ignoré (et listé
-> comme tel dans la réponse de l'API).
+- Agrégat **mensuel** après exclusion du dernier mois incomplet.
+- Baselines : naïve, moyenne, naïve saisonnière. Prophet : `yhat ≥ 0`, saisonnalité annuelle seulement si ≥ 24 mois, `fourier_order=3`, peu de changepoints.
+- Le stock n'est pas un second Prophet : `stock[t] = stock[t-1] - demande[t]`.
+- Dépôt trop court (ex. DP1608) : pooling avec le dépôt lié (DP1602) ou baseline.
+- Hyperparamètres hors-ligne : `python analysis/select_hyperparameters.py` depuis `backend/`.
 
-### Fichier de stock (CSV ou Excel)
+Détail et diagnostics : `docs/analyse-methodologique-ml.md`.
 
-| Colonne             | Obligatoire | Description                                          |
-|---------------------|-------------|--------------------------------------------------------|
-| `product_id`        | oui         | Identifiant produit / SKU (doit correspondre aux ventes)|
-| `stock_quantity`    | oui         | Quantité actuellement en stock                        |
-| `product_name`      | non         | Nom lisible du produit                                 |
-| `lead_time_days`    | non (défaut 7) | Délai de livraison fournisseur en jours            |
-| `safety_stock_days` | non (défaut 3) | Marge de sécurité en jours                         |
+## Format des fichiers
 
-## Architecture & choix techniques
+Fichier de mouvements (CSV ou Excel) :
 
-- **Un modèle Prophet par produit** (pas un modèle global) : chaque produit
-  peut avoir sa propre saisonnalité, c'est plus précis dès que les produits
-  ont des dynamiques différentes.
-- **Stockage en fichiers parquet** (`backend/data/`) plutôt qu'une base de
-  données : suffisant pour un usage mono-utilisateur / prototype. Pour passer
-  en production multi-utilisateurs, remplacez `data_store.py` par une vraie
-  base (Postgres, etc.) — les endpoints de `main.py` n'ont pas besoin de
-  changer.
-- **CORS** : le backend autorise par défaut `http://localhost:3000`. Modifiez
-  `allow_origins` dans `backend/main.py` si vous déployez ailleurs.
+| Colonne | Obligatoire | Rôle |
+|---|---|---|
+| `Date physique` | oui | Date du mouvement |
+| `Quantité` | oui | kg (signe ignoré, le type vient des colonnes suivantes) |
+| `Entrepôt` | oui | Code dépôt |
+| `Stock en sortie` | non | `Vendu` → vente |
+| `Réception` | non | `Acheté` → achat |
+| `Référence` | non | `Transfert` → transfert in/out selon le signe |
 
-## Prochaines étapes possibles
-
-- Authentification multi-utilisateurs
-- Historisation des imports (versioning des fichiers)
-- Export CSV des recommandations de réapprovisionnement
-- Alertes email/Slack quand un produit passe en statut "critique"
-- Prise en compte de plusieurs entrepôts / emplacements de stock
+Un fichier sans ces colonnes (ex. rapprochement D365 mal formé) est **ignoré** avec un message 400, pas une erreur 500.

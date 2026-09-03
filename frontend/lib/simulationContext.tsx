@@ -8,7 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { simulateForecast, getWarehouses, ApiRequestError } from "@/lib/api";
+import { simulateForecast, getWarehouses, getStockStatus, ApiRequestError } from "@/lib/api";
+import type { SimulationResult, StockStatusRow } from "@/lib/types";
 
 const STORAGE_KEY = "simulation-form-state";
 
@@ -27,7 +28,7 @@ function loadStoredState(): {
   minStock: number | "";
   referenceDate: string;
   months: number;
-  result: any;
+  result: SimulationResult | null;
 } | null {
   if (typeof window === "undefined") return null;
   try {
@@ -42,17 +43,17 @@ interface SimulationContextValue {
   warehouses: string[];
   warehouse: string;
   stock: number | "";
-  leadTime: number;
+  leadTime: number | "";
   minStock: number | "";
   referenceDate: string;
   months: number;
   loading: boolean;
-  result: any;
+  result: SimulationResult | null;
   error: string | null;
   notification: string | null;
   setWarehouse: (warehouse: string) => void;
   setStock: (stock: number | "") => void;
-  setLeadTime: (leadTime: number) => void;
+  setLeadTime: (leadTime: number | "") => void;
   setMinStock: (minStock: number | "") => void;
   setReferenceDate: (referenceDate: string) => void;
   setMonths: (months: number) => void;
@@ -64,21 +65,20 @@ const SimulationContext = createContext<SimulationContextValue | null>(null);
 
 export function SimulationProvider({ children }: { children: ReactNode }) {
   const [warehouses, setWarehouses] = useState<string[]>([]);
+  const [statusRows, setStatusRows] = useState<StockStatusRow[]>([]);
   const [warehouse, setWarehouse] = useState("");
   const [stock, setStock] = useState<number | "">("");
-  const [leadTime, setLeadTime] = useState(7);
+  const [leadTime, setLeadTime] = useState<number | "">(7);
   const [minStock, setMinStock] = useState<number | "">("");
   const [referenceDate, setReferenceDate] = useState("");
   const [months, setMonths] = useState(3);
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<SimulationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  // Ne lit le localStorage qu'après le montage côté client, pour éviter
-  // un décalage entre le HTML rendu côté serveur et celui du client.
   useEffect(() => {
     const stored = loadStoredState();
     if (stored) {
@@ -106,8 +106,22 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       .catch((err) => {
         setError(err instanceof ApiRequestError ? err.message : "Impossible de charger les entrepôts.");
       });
+    getStockStatus()
+      .then(setStatusRows)
+      .catch(() => {
+        // ignore
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!warehouse) return;
+    const row = statusRows.find((item) => item.warehouse === warehouse);
+    if (!row) return;
+    setStock(row.stock);
+    setLeadTime(row.delivery_time || 7);
+    setMinStock(row.min_stock);
+  }, [warehouse, statusRows]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -118,23 +132,30 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   }, [hydrated, warehouse, stock, leadTime, minStock, referenceDate, months, result]);
 
   const simulate = useCallback(async () => {
+    if (!warehouse) {
+      setError("Veuillez sélectionner un entrepôt.");
+      return;
+    }
+    if (stock === "") {
+      setError("Indiquez un stock actuel (kg).");
+      return;
+    }
+
     setError(null);
     setResult(null);
     setLoading(true);
 
     try {
       const data = await simulateForecast({
-        warehouse: warehouse || undefined,
-        current_stock: stock === "" ? 0 : stock,
-        lead_time: leadTime,
+        warehouse,
+        current_stock: stock,
+        lead_time: leadTime === "" ? 7 : leadTime,
         min_stock: minStock === "" ? 0 : minStock,
         reference_date: referenceDate || undefined,
         months,
       });
       setResult(data);
-      setNotification(
-        warehouse ? `Simulation prête pour ${warehouse}` : "Simulation prête"
-      );
+      setNotification(`Simulation prête pour ${warehouse} (les paramètres d'entrepôt n'ont pas été modifiés)`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Impossible de lancer la simulation.");
     } finally {
