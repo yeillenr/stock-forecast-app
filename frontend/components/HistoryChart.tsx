@@ -15,6 +15,7 @@ export default function HistoryChart({ data }: { data: SalesPoint[] }) {
   const chartData = data.map((item) => ({
     ...item,
     quantity: item.quantity ?? item.Quantité ?? 0,
+    incomplete: Boolean(item.incomplete),
   }));
 
   return (

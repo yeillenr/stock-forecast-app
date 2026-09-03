@@ -2,6 +2,22 @@
 
 import { AlertTriangle } from "lucide-react";
 import { useSimulation } from "@/lib/simulationContext";
+import ForecastChart from "@/components/ForecastChart";
+
+const RISK_LABEL: Record<string, string> = {
+  high: "Élevé",
+  medium: "Moyen",
+  low: "Faible",
+  unknown: "Indéterminé",
+};
+
+const MODEL_LABEL: Record<string, string> = {
+  prophet: "Prophet",
+  pooled_prophet: "Prophet (dépôt lié)",
+  seasonal_naive: "Naïve saisonnière",
+  mean: "Moyenne",
+  naive: "Naïve",
+};
 
 export default function SimulationForm() {
   const {
@@ -24,40 +40,34 @@ export default function SimulationForm() {
     simulate,
   } = useSimulation();
 
+  const remainingDays = result?.remaining_days ?? result?.remaining_stock;
+  const lead = leadTime === "" ? 0 : leadTime;
+
   return (
     <div className="space-y-8">
-
       <div className="bg-surface border border-line rounded-xl p-8">
-
         <div className="grid md:grid-cols-2 gap-6">
-
           <div>
-            <label className="block text-sm mb-2">Dépôt</label>
-
+            <label className="block text-sm mb-2">Entrepôt</label>
             <select
               className="w-full border rounded-md p-3 transition-colors duration-150 focus:border-brand"
               value={warehouse}
               onChange={(e) => setWarehouse(e.target.value)}
             >
-              <option value="">Choisir...</option>
-              {warehouses.length > 0 ? (
-                warehouses.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))
-              ) : (
-                <option value="">Aucun entrepôt disponible</option>
-              )}
+              <option value="">Choisir un entrepôt...</option>
+              {warehouses.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
             </select>
-
           </div>
 
           <div>
-            <label>Stock actuel (Kg)</label>
-
+            <label className="block text-sm mb-2">Stock actuel (kg)</label>
             <input
               type="number"
+              min={0}
               className="w-full border rounded-md p-3 transition-colors duration-150 focus:border-brand"
               value={stock}
               onChange={(e) => setStock(e.target.value === "" ? "" : Number(e.target.value))}
@@ -65,21 +75,21 @@ export default function SimulationForm() {
           </div>
 
           <div>
-            <label>Délai de livraison (jours)</label>
-
+            <label className="block text-sm mb-2">Délai de livraison (jours)</label>
             <input
               type="number"
+              min={0}
               className="w-full border rounded-md p-3 transition-colors duration-150 focus:border-brand"
               value={leadTime}
-              onChange={(e) => setLeadTime(Number(e.target.value))}
+              onChange={(e) => setLeadTime(e.target.value === "" ? "" : Number(e.target.value))}
             />
           </div>
 
           <div>
-            <label>Stock minimum (Kg)</label>
-
+            <label className="block text-sm mb-2">Stock minimum (kg)</label>
             <input
               type="number"
+              min={0}
               className="w-full border rounded-md p-3 transition-colors duration-150 focus:border-brand"
               value={minStock}
               onChange={(e) => setMinStock(e.target.value === "" ? "" : Number(e.target.value))}
@@ -87,8 +97,7 @@ export default function SimulationForm() {
           </div>
 
           <div>
-            <label>Date de référence</label>
-
+            <label className="block text-sm mb-2">Date de référence</label>
             <input
               type="date"
               className="w-full border rounded-md p-3 transition-colors duration-150 focus:border-brand"
@@ -98,8 +107,7 @@ export default function SimulationForm() {
           </div>
 
           <div>
-            <label>Horizon</label>
-
+            <label className="block text-sm mb-2">Horizon</label>
             <select
               className="w-full border rounded-md p-3 transition-colors duration-150 focus:border-brand"
               value={months}
@@ -111,7 +119,6 @@ export default function SimulationForm() {
               <option value={12}>12 mois</option>
             </select>
           </div>
-
         </div>
 
         <button
@@ -121,7 +128,6 @@ export default function SimulationForm() {
         >
           {loading ? "Simulation..." : "Lancer la simulation"}
         </button>
-
       </div>
 
       {error && (
@@ -136,45 +142,60 @@ export default function SimulationForm() {
             <div className="flex items-center gap-3 rounded-xl bg-status-watchSoft px-5 py-4 text-status-watch shadow-sm">
               <AlertTriangle className="w-6 h-6 shrink-0" strokeWidth={2.5} />
               <span>
-                Historique limité ({result.history_months} mois de données) : cette prévision doit être interprétée
-                avec prudence, le modèle n'a pas assez de recul pour être vraiment fiable.
+                Historique limité ({result.history_months} mois complets) : un modèle simple est préféré à Prophet.
               </span>
             </div>
           )}
 
-          {result.remaining_stock <= leadTime && (
+          {remainingDays != null && remainingDays <= lead && (
             <div className="flex items-center gap-3 rounded-xl bg-status-out px-5 py-4 text-white font-semibold shadow-sm">
               <AlertTriangle className="w-6 h-6 shrink-0" strokeWidth={2.5} />
               <span>
                 Risque de rupture : le stock atteindra le seuil minimum le {formatDate(result.stockout_date)}, avant
-                même l'arrivée d'une commande passée aujourd'hui (délai de livraison : {leadTime} j).
+                l&apos;arrivée d&apos;une commande passée aujourd&apos;hui (délai : {lead} j).
               </span>
             </div>
           )}
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <Card title="Demande prévue" value={`${formatNumber(result.predicted_demand?.toFixed?.(0)) } Kg`} />
-            <Card title="Demande ajustée" value={`${formatNumber(result.adjusted_demand) } Kg `} />
-            <Card title="Quantité à commander" value={`${formatNumber(result.quantity_to_order) } Kg `} />
+            <Card title="Demande prévue (P50)" value={`${formatNumber(result.predicted_demand)} kg`} />
+            <Card title="Demande haute (P10 stock)" value={`${formatNumber(result.adjusted_demand)} kg`} />
+            <Card title="Quantité à commander" value={`${formatNumber(result.quantity_to_order)} kg`} />
             <Card
-              title="Date de rupture"
+              title="Date de rupture (P50)"
               value={formatDate(result.stockout_date)}
-              subtitle={`dans ${formatNumber(result.remaining_stock)} jours`}
+              subtitle={`dans ${formatNumber(remainingDays)} jours`}
             />
-            <Card title="Niveau de risque" value={result.risk } />
-            <Card title="Date de commande" value={formatDate(result.forecast_date)} />
+            <Card
+              title="Rupture P10 / P90"
+              value={`${formatDate(result.stockout_date_p10)} / ${formatDate(result.stockout_date_p90)}`}
+            />
+            <Card title="Niveau de risque" value={RISK_LABEL[result.risk || ""] || result.risk || "-"} />
+            <Card title="Date de commande" value={formatDate(result.order_date || result.forecast_date)} />
+            <Card
+              title="Modèle de demande"
+              value={MODEL_LABEL[result.model_used || ""] || result.model_used || "-"}
+            />
           </div>
 
+          {result.forecast && result.forecast.length > 0 && (
+            <div className="bg-surface border border-line rounded-xl p-5">
+              <h3 className="text-base font-semibold mb-4">Trajectoire de demande prévue</h3>
+              <ForecastChart data={result.forecast} />
+            </div>
+          )}
+
           <div className="text-xs italic text-ink-faint space-y-1">
-            <div className="flex gap-4">
-              <span>MAE : {formatNumber(result.MAE)} Kg</span>
-              <span>RMSE : {formatNumber(result.RMSE)} Kg</span>
-              {result.credibility_rate != null && (
-                <span>Crédibilité : {result.credibility_rate} %</span>
-              )}
+            <div className="flex gap-4 flex-wrap">
+              <span>MAE hold-out : {formatNumber(result.MAE)} kg</span>
+              <span>RMSE : {formatNumber(result.RMSE)} kg</span>
+              {result.mape != null && <span>MAPE : {result.mape} %</span>}
             </div>
             {result.days_since_last_data != null && (
-              <div>Dernière donnée il y a {result.days_since_last_data} j</div>
+              <div>Dernière donnée complète il y a {result.days_since_last_data} j</div>
+            )}
+            {result.incomplete_month_dropped && (
+              <div>Mois incomplet écarté : {result.incomplete_month_dropped}</div>
             )}
           </div>
         </div>
@@ -183,7 +204,7 @@ export default function SimulationForm() {
   );
 }
 
-function Card({ title, value, subtitle }: any) {
+function Card({ title, value, subtitle }: { title: string; value: string; subtitle?: string }) {
   return (
     <div className="bg-surface border border-line rounded-xl p-5 transition-shadow duration-200 hover:shadow-md">
       <p className="text-sm text-ink-soft">{title}</p>
@@ -192,15 +213,17 @@ function Card({ title, value, subtitle }: any) {
     </div>
   );
 }
-function formatNumber(value: number | null | undefined) {
-  if (value == null) return "-";
 
-  return new Intl.NumberFormat("fr-FR").format(value);
+function formatNumber(value: number | null | undefined) {
+  if (value == null || Number.isNaN(Number(value))) return "-";
+  return new Intl.NumberFormat("fr-FR").format(Number(value));
 }
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
-
-  return new Date(value).toLocaleDateString("fr-FR", {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString("fr-FR", {
     day: "numeric",
     month: "long",
     year: "numeric",

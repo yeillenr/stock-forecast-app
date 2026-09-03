@@ -4,6 +4,7 @@
     "seasonality_prior_scale": 1,
     "cv_rmse": 714868.8992979098,
     "cv_mape": 53.33843079374733,
+    "seasonality_mode": "additive",
     "cv_skipped": false,
     "history_months": 28
   },
@@ -12,6 +13,7 @@
     "seasonality_prior_scale": 1,
     "cv_rmse": 206123.20671090498,
     "cv_mape": 22.696129466587063,
+    "seasonality_mode": "additive",
     "cv_skipped": false,
     "history_months": 28
   },
@@ -20,6 +22,7 @@
     "seasonality_prior_scale": 1,
     "cv_rmse": 53623.02872364329,
     "cv_mape": 98.38986664910068,
+    "seasonality_mode": "additive",
     "cv_skipped": false,
     "history_months": 24
   },

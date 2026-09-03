@@ -25,16 +25,22 @@ const NAV_ITEMS = [
   },
 
   {
+    href: "/forecast",
+    label: "Prévisions",
+    icon: TrendingUp,
+  },
+
+  {
     href: "/simulator",
     label: "Simulateur",
     icon: Calculator,
   },
 
-  // {
-  //   href: "/assistant",
-  //   label: "Assistant IA",
-  //   icon: Bot,
-  // }
+  {
+    href: "/assistant",
+    label: "Assistant",
+    icon: Bot,
+  },
 ];
 
 export default function Sidebar() {
@@ -56,7 +62,7 @@ export default function Sidebar() {
 
         <nav className="mt-3 flex flex-wrap gap-2">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
+            const active = href === "/" ? pathname === href : pathname.startsWith(href);
             return (
               <Link
                 key={href}
@@ -87,7 +93,7 @@ export default function Sidebar() {
 
         <nav className="flex flex-col gap-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
+            const active = href === "/" ? pathname === href : pathname.startsWith(href);
             return (
               <Link
                 key={href}
@@ -106,8 +112,8 @@ export default function Sidebar() {
         </nav>
 
         <div className="mt-auto px-3 py-4 text-xs text-ink-faint leading-relaxed border-t border-line">
-          Prévisions générées avec Prophet à partir de votre historique de
-          ventes.
+          Demande prévue par dépôt, puis trajectoire de stock. Prophet n'est
+          servi que s'il bat une baseline.
         </div>
       </aside>
     </>

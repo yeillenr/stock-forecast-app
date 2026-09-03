@@ -30,7 +30,7 @@ export default function WarehouseForm() {
     getStockStatus()
       .then(setStockStatus)
       .catch(() => {
-        // ignore, les champs resteront à 0
+        // les champs resteront vides
       });
   }, []);
 
@@ -38,7 +38,7 @@ export default function WarehouseForm() {
     const row = stockStatus.find((item) => item.warehouse === warehouse);
     if (row) {
       setStock(row.stock);
-      setDeliveryTime(row.delivery_time);
+      setDeliveryTime(row.delivery_time || 7);
       setMinStock(row.min_stock);
     }
   }, [warehouse, stockStatus]);
@@ -58,10 +58,10 @@ export default function WarehouseForm() {
       await updateWarehouseSettings({
         warehouse,
         stock: stock === "" ? 0 : stock,
-        delivery_time: deliveryTime ==="" ? 0 : deliveryTime,
+        delivery_time: deliveryTime === "" ? 7 : deliveryTime,
         min_stock: minStock === "" ? 0 : minStock,
       });
-      setSavedMessage("Paramètres enregistrés.");
+      setSavedMessage("Paramètres enregistrés. Rechargez le tableau de bord pour voir le nouveau statut.");
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Impossible d'enregistrer les paramètres.");
     } finally {
@@ -89,9 +89,10 @@ export default function WarehouseForm() {
         </div>
 
         <div>
-          <label className="block text-sm mb-2">Stock actuel (KG)</label>
+          <label className="block text-sm mb-2">Stock actuel (kg)</label>
           <input
             type="number"
+            min={0}
             className="w-full border border-line rounded-md p-3 transition-colors duration-150 focus:border-brand"
             value={stock}
             onChange={(e) => setStock(e.target.value === "" ? "" : Number(e.target.value))}
@@ -102,16 +103,18 @@ export default function WarehouseForm() {
           <label className="block text-sm mb-2">Délai de livraison (jours)</label>
           <input
             type="number"
+            min={0}
             className="w-full border border-line rounded-md p-3 transition-colors duration-150 focus:border-brand"
             value={deliveryTime}
-            onChange={(e) => setDeliveryTime(Number(e.target.value))}
+            onChange={(e) => setDeliveryTime(e.target.value === "" ? "" : Number(e.target.value))}
           />
         </div>
 
         <div>
-          <label className="block text-sm mb-2">Stock minimum (KG)</label>
+          <label className="block text-sm mb-2">Stock minimum (kg)</label>
           <input
             type="number"
+            min={0}
             className="w-full border border-line rounded-md p-3 transition-colors duration-150 focus:border-brand"
             value={minStock}
             onChange={(e) => setMinStock(e.target.value === "" ? "" : Number(e.target.value))}

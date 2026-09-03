@@ -25,7 +25,7 @@ export default function UploadCard({
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(files: File[]) {
-    setFileName(files[0].name);
+    setFileName(files.length > 1 ? `${files.length} fichiers` : files[0].name);
     setState("loading");
     setMessage(null);
     try {
@@ -74,6 +74,7 @@ export default function UploadCard({
 
             if (files && files.length > 0) {
               handleFile(Array.from(files));
+              e.target.value = "";
             }
           }}
         />

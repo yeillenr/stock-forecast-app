@@ -39,7 +39,7 @@ export default function RootLayout({
         className={`${display.variable} ${body.variable} ${mono.variable} font-body antialiased`}
       >
         <SimulationProvider>
-          <div className="flex min-h-screen">
+          <div className="flex min-h-screen flex-col md:flex-row">
             <Sidebar />
             <main className="flex-1 min-w-0">{children}</main>
           </div>

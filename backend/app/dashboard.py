@@ -1,23 +1,45 @@
 import json
 import os
-from datetime import date, timedelta
+from datetime import date
 
 import pandas as pd
 
+from data_store import APP_DIR, BACKEND_DIR, DataStore
 from forecasting import ForecastingService
+from inventory import simulate_inventory
 
 
 class DashboardService:
-
     def __init__(self):
-        self.settings_file = "settings.json"
+        self.settings_file = os.path.join(BACKEND_DIR, "settings.json")
+        self.legacy_settings_file = os.path.join(APP_DIR, "settings.json")
+        self.store = DataStore()
         if not os.path.exists(self.settings_file):
             with open(self.settings_file, "w") as f:
                 json.dump({}, f)
+        self._merge_legacy_settings()
 
-    # -----------------------------------
-    # SETTINGS
-    # -----------------------------------
+    def _merge_legacy_settings(self):
+        settings = self.load_settings()
+        if os.path.exists(self.legacy_settings_file):
+            with open(self.legacy_settings_file, "r") as f:
+                legacy = json.load(f)
+            changed = False
+            for warehouse, values in legacy.items():
+                if warehouse not in settings:
+                    settings[warehouse] = values
+                    changed = True
+                else:
+                    for key, value in values.items():
+                        if key not in settings[warehouse]:
+                            settings[warehouse][key] = value
+                            changed = True
+        for warehouse, values in list(settings.items()):
+            if values.get("delivery_time") in (None, ""):
+                values["delivery_time"] = 7
+                changed = True
+        if changed:
+            self.save_settings(settings)
 
     def load_settings(self):
         with open(self.settings_file, "r") as f:
@@ -27,202 +49,153 @@ class DashboardService:
         with open(self.settings_file, "w") as f:
             json.dump(settings, f, indent=4)
 
-    # -----------------------------------
-    # STOCK UTILISATEUR
-    # -----------------------------------
+    def _update_field(self, warehouse, field, value):
+        settings = self.load_settings()
+        if warehouse not in settings:
+            settings[warehouse] = {}
+        settings[warehouse][field] = value
+        self.save_settings(settings)
 
     def update_stock(self, warehouse, stock):
-        settings = self.load_settings()
-        if warehouse not in settings:
-            settings[warehouse] = {}
-        settings[warehouse]["stock"] = stock
-        self.save_settings(settings)
-
-    # -----------------------------------
+        self._update_field(warehouse, "stock", stock)
 
     def update_delivery_time(self, warehouse, delay):
-        settings = self.load_settings()
-        if warehouse not in settings:
-            settings[warehouse] = {}
-        settings[warehouse]["delivery_time"] = delay
-        self.save_settings(settings)
-
-    # -----------------------------------
+        self._update_field(warehouse, "delivery_time", delay)
 
     def update_min_stock(self, warehouse, min_stock):
-        settings = self.load_settings()
-        if warehouse not in settings:
-            settings[warehouse] = {}
-        settings[warehouse]["min_stock"] = min_stock
-        self.save_settings(settings)
+        self._update_field(warehouse, "min_stock", min_stock)
 
-    # -----------------------------------
+    def reconstructed_stocks(self):
+        movements = self.store.load_movements()
+        if movements is None:
+            return {}
+        return self.store.reconstruct_stock(movements)
 
     def get_stock(self, warehouse):
         settings = self.load_settings()
-        return settings.get(warehouse, {}).get("stock", 0)
-
-    # -----------------------------------
+        if warehouse in settings and "stock" in settings[warehouse]:
+            return settings[warehouse]["stock"]
+        reconstructed = self.reconstructed_stocks()
+        return reconstructed.get(warehouse, 0)
 
     def get_delivery_time(self, warehouse):
         settings = self.load_settings()
-        return settings.get(warehouse, {}).get("delivery_time", 0)
-
-    # -----------------------------------
+        value = settings.get(warehouse, {}).get("delivery_time")
+        if value in (None, ""):
+            return 7
+        return value
 
     def get_min_stock(self, warehouse):
         settings = self.load_settings()
         return settings.get(warehouse, {}).get("min_stock", 0)
-
-    # -----------------------------------
-    # HISTORIQUE DES VENTES
-    # -----------------------------------
 
     def sales_history(self, dataframe, warehouse=None):
         df = dataframe.copy()
         if warehouse:
             df = df[df["Entrepôt"] == warehouse]
 
+        cutoff = self.store.incomplete_month_start(df)
         sales = (
             df.groupby(pd.Grouper(key="Date physique", freq="MS"))["Quantité"]
             .sum()
             .reset_index()
         )
-
-        return [
-            {
-                "date": row["Date physique"].strftime("%Y-%m-%d"),
-                "quantity": round(float(row["Quantité"]), 2),
-            }
-            for _, row in sales.iterrows()
-        ]
-
-    # -----------------------------------
-    # CONSOMMATION MOYENNE
-    # -----------------------------------
+        rows = []
+        for _, row in sales.iterrows():
+            month_start = pd.Timestamp(row["Date physique"]).normalize()
+            incomplete = cutoff is not None and month_start >= cutoff
+            rows.append(
+                {
+                    "date": month_start.strftime("%Y-%m-%d"),
+                    "quantity": round(float(row["Quantité"]), 2),
+                    "incomplete": bool(incomplete),
+                }
+            )
+        return rows
 
     def average_consumption(self, dataframe, warehouse):
         df = dataframe.copy()
         df = df[df["Entrepôt"] == warehouse]
-
+        df, _ = self.store.drop_incomplete_last_month(df)
         if df.empty:
             return 0.0
-
         span_days = (df["Date physique"].max() - df["Date physique"].min()).days + 1
-
         if span_days <= 0:
             return 0.0
-
         average = df["Quantité"].sum() / span_days
-
         if pd.isna(average):
             return 0.0
-
         return round(float(average), 2)
 
-    # -----------------------------------
-    # AUTONOMIE
-    # -----------------------------------
+    def warehouse_list(self, dataframe):
+        if "Entrepôt" not in dataframe.columns:
+            return []
+        return sorted(dataframe["Entrepôt"].dropna().unique().tolist())
 
-    def autonomy(self, dataframe, warehouse):
-        stock = float(self.get_stock(warehouse))
-        min_stock = float(self.get_min_stock(warehouse))
-        usable_stock = max(stock - min_stock, 0)
-        average = self.average_consumption(dataframe, warehouse)
+    def _inventory_for_warehouse(self, dataframe, warehouse, months=3):
+        forecast_service = ForecastingService()
+        prophet_response = forecast_service.forecast(
+            dataframe=dataframe,
+            months=months,
+            warehouse=warehouse,
+        )
+        inventory = simulate_inventory(
+            forecast_points=prophet_response.get("forecast", []),
+            current_stock=self.get_stock(warehouse),
+            min_stock=self.get_min_stock(warehouse),
+            lead_time=self.get_delivery_time(warehouse),
+            reference_date=date.today(),
+            months=months,
+        )
+        return prophet_response, inventory
 
-        if average <= 0:
-            return 0
-
-        return int(round(usable_stock / average))
-
-    # -----------------------------------
-    # DATE COMMANDE
-    # -----------------------------------
-
-    def reorder_days(self, dataframe, warehouse):
-        autonomy = self.autonomy(dataframe, warehouse)
-        delivery = self.get_delivery_time(warehouse)
-        return int(round(max(autonomy - delivery, 0)))
-
-    # -----------------------------------
-    # QUANTITE CONSEILLEE
-    # -----------------------------------
-
-    def quantity_to_order(self, dataframe, warehouse):
-        stock = float(self.get_stock(warehouse))
-        min_stock = float(self.get_min_stock(warehouse))
-        average = self.average_consumption(dataframe, warehouse)
-        delivery = float(self.get_delivery_time(warehouse))
-
-        if average <= 0:
-            return 0.0
-
-        target = average * (delivery + 30) + min_stock
-        quantity = target - stock
-
-        return round(max(quantity, 0), 2)
-
-    # -----------------------------------
-    # RESUME DASHBOARD
-    # -----------------------------------
-
-    def dashboard_summary(self, dataframe, warehouse):
-        autonomy = self.autonomy(dataframe, warehouse)
+    def dashboard_summary(self, dataframe, warehouse, months=3):
+        if not warehouse:
+            raise ValueError("Un entrepôt est requis.")
+        prophet_response, inventory = self._inventory_for_warehouse(
+            dataframe, warehouse, months=months
+        )
+        autonomy = inventory["remaining_days"]
         return {
             "warehouse": warehouse,
             "stock": self.get_stock(warehouse),
             "min_stock": self.get_min_stock(warehouse),
             "average_consumption": self.average_consumption(dataframe, warehouse),
             "autonomy": autonomy,
-            "stockout_date": (date.today() + timedelta(days=autonomy)).isoformat(),
+            "stockout_date": inventory["stockout_date"],
+            "stockout_date_p10": inventory["stockout_date_p10"],
+            "stockout_date_p90": inventory["stockout_date_p90"],
             "delivery_time": self.get_delivery_time(warehouse),
-            "order_in_days": self.reorder_days(dataframe, warehouse),
-            "quantity_to_order": self.quantity_to_order(dataframe, warehouse)
+            "order_in_days": inventory["order_in_days"],
+            "quantity_to_order": inventory["quantity_to_order"],
+            "model_used": prophet_response.get("model_used"),
+            "mape": prophet_response.get("mape"),
         }
 
-    # -----------------------------------
-    # STATUT DE STOCK PAR ENTREPÔT
-    # -----------------------------------
-
-    def warehouse_list(self, dataframe):
-        if "Entrepôt" not in dataframe.columns:
-            return []
-
-        return sorted(dataframe["Entrepôt"].dropna().unique().tolist())
-
-    # -----------------------------------
-    # STATUT DE STOCK PAR ENTREPÔT
-    # -----------------------------------
-
-    def stock_status_rows(self, dataframe):
-        warehouses = dataframe["Entrepôt"].dropna().unique().tolist()
+    def stock_status_rows(self, dataframe, warehouse=None):
+        warehouses = self.warehouse_list(dataframe)
+        if warehouse:
+            warehouses = [item for item in warehouses if item == warehouse]
 
         rows = []
-        for warehouse in sorted(warehouses):
-            summary = self.dashboard_summary(
-                dataframe,
-                warehouse,
-            )
+        for item in warehouses:
+            summary = self.dashboard_summary(dataframe, item)
             stock = summary["stock"]
             order_in_days = summary["order_in_days"]
+            delivery = summary["delivery_time"] or 0
 
             if stock <= 0:
                 status = "rupture"
             elif order_in_days <= 0:
                 status = "critique"
-            elif order_in_days <= 30:
+            elif order_in_days <= max(delivery, 30):
                 status = "a_commander"
             else:
                 status = "ok"
 
             summary["status"] = status
             rows.append(summary)
-
         return rows
-
-    # -----------------------------------
-    # SIMULATION D'APPROVISIONNEMENT
-    # -----------------------------------
 
     def simulation(
         self,
@@ -233,158 +206,56 @@ class DashboardService:
         min_stock=None,
         reference_date=None,
         months=3,
+        persist_settings=False,
     ):
         if not warehouse:
-            return {
-                "predicted_demand": 0,
-                "adjusted_demand": 0,
-                "quantity_to_order": 0,
-                "remaining_stock": 0,
-                "risk": "unknown",
-                "stockout_date": None,
-                "forecast_date": None,
-                "forecast": [],
-            }
+            raise ValueError("Veuillez sélectionner un entrepôt.")
 
-        if current_stock is not None:
-            self.update_stock(warehouse, current_stock)
-
-        if lead_time is not None:
-            self.update_delivery_time(warehouse, lead_time)
-
-        if min_stock is not None:
-            self.update_min_stock(warehouse, min_stock)
+        if persist_settings:
+            if current_stock is not None:
+                self.update_stock(warehouse, current_stock)
+            if lead_time is not None:
+                self.update_delivery_time(warehouse, lead_time)
+            if min_stock is not None:
+                self.update_min_stock(warehouse, min_stock)
 
         stock = float(
-            current_stock
-            if current_stock is not None
-            else self.get_stock(warehouse)
+            current_stock if current_stock is not None else self.get_stock(warehouse)
         )
-
         delivery = int(
-            lead_time
-            if lead_time is not None
-            else self.get_delivery_time(warehouse)
+            lead_time if lead_time is not None else self.get_delivery_time(warehouse)
         )
-
         min_stock_value = float(
-            min_stock
-            if min_stock is not None
-            else self.get_min_stock(warehouse)
-        )
-
-        ref_date = (
-            date.fromisoformat(reference_date)
-            if reference_date
-            else date.today()
+            min_stock if min_stock is not None else self.get_min_stock(warehouse)
         )
 
         forecast_service = ForecastingService()
-        filtered_data = dataframe
-        if "Entrepôt" in dataframe.columns and warehouse:
-            filtered_data = dataframe[dataframe["Entrepôt"] == warehouse]
-
-        try:
-            prophet_response = forecast_service.forecast(
-                dataframe=filtered_data,
-                months=months,
-                warehouse=warehouse,
-            )
-        except Exception as exc:
-            return {
-                "predicted_demand": 0,
-                "adjusted_demand": 0,
-                "quantity_to_order": 0,
-                "remaining_stock": 0,
-                "risk": "unknown",
-                "stockout_date": None,
-                "forecast_date": None,
-                "forecast": [],
-                "error": str(exc),
-            }
-
-        forecast_points = prophet_response.get("forecast", [])
-        # Prévision moyenne
-        predicted = round(
-            sum(point.get("prediction", 0) for point in forecast_points),
-            2,
+        prophet_response = forecast_service.forecast(
+            dataframe=dataframe,
+            months=months,
+            warehouse=warehouse,
         )
-
-        # Prévision pessimiste (borne supérieure)
-        upper_demand = round(
-            sum(point.get("upper", point.get("prediction", 0))
-                for point in forecast_points),
-            2,
+        inventory = simulate_inventory(
+            forecast_points=prophet_response.get("forecast", []),
+            current_stock=stock,
+            min_stock=min_stock_value,
+            lead_time=delivery,
+            reference_date=reference_date or date.today().isoformat(),
+            months=months,
         )
-
-        # Prévision optimiste (borne inférieure)
-        lower_demand = round(
-            sum(point.get("lower", point.get("prediction", 0))
-                for point in forecast_points),
-            2,
-        )
-
-        # Incertitude globale de Prophet
-        uncertainty = upper_demand - predicted
-
-        # Demande ajustée
-        adjusted = upper_demand
-
-        days_of_forecast = max(months * 30, 1)
-        daily_forecast = adjusted / days_of_forecast
-        safety_stock = round(daily_forecast * delivery, 2)
-        target = round(predicted + safety_stock + min_stock_value, 2)
-        qty = round(max(target - stock, 0), 2)
-
-        usable_stock = max(stock - min_stock_value, 0)
-
-        if daily_forecast > 0:
-            remaining_days = int(usable_stock / daily_forecast)
-        else:
-            remaining_days = 0
-
-        confidence = 100
-
-        if predicted > 0:
-            confidence = max(
-                0,
-                round(
-                    100 - (uncertainty / predicted) * 100,
-                    1,
-                ),
-            )
-
-        if remaining_days <= delivery or confidence < 60:
-            risk = "high"
-        elif remaining_days <= delivery + 15 or confidence < 80:
-            risk = "medium"
-        else:
-            risk = "low"
-
-        order_in_days = max(remaining_days - delivery, 0)
-        stockout_date = (
-            ref_date + timedelta(days=remaining_days)
-        ).isoformat()
-        order_date = (
-            ref_date + timedelta(days=order_in_days)
-        ).isoformat()
 
         return {
-            "predicted_demand": int(predicted),
-            "adjusted_demand": int(adjusted),
-            "quantity_to_order": int(qty),
-            "remaining_stock": int(remaining_days),
-            "risk": risk,
-            "stockout_date": stockout_date,
-            "forecast_date": order_date,
-            "lower_demand": int(lower_demand),
-            "upper_demand": int(upper_demand),
-            "forecast_uncertainty": round(uncertainty, 2),
-            "confidence": confidence,
+            **inventory,
+            "forecast": prophet_response.get("forecast", []),
+            "history": prophet_response.get("history", []),
             "MAE": prophet_response.get("MAE"),
             "RMSE": prophet_response.get("RMSE"),
-            "credibility_rate": prophet_response.get("credibility_rate"),
+            "mape": prophet_response.get("mape"),
+            "model_used": prophet_response.get("model_used"),
             "days_since_last_data": prophet_response.get("days_since_last_data"),
             "history_months": prophet_response.get("history_months"),
             "low_data_warning": prophet_response.get("low_data_warning"),
+            "incomplete_month_dropped": prophet_response.get("incomplete_month_dropped"),
+            "remaining_stock": inventory["remaining_days"],
+            "forecast_date": inventory["order_date"],
         }

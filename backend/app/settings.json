@@ -1,18 +1,22 @@
 {
     "DP0117": {
         "stock": 50000.0,
-        "delivery_time": 5
-    },
-    "DP1602": {
-        "stock": 120000.0,
-        "delivery_time": 5
+        "delivery_time": 5,
+        "min_stock": 0
     },
     "DP0517": {
         "stock": 500000.0,
-        "delivery_time": 5
+        "delivery_time": 5,
+        "min_stock": 0
+    },
+    "DP1602": {
+        "stock": 120000.0,
+        "delivery_time": 5,
+        "min_stock": 0
     },
     "DP1608": {
         "stock": 200000.0,
-        "delivery_time": 6
+        "delivery_time": 6,
+        "min_stock": 0
     }
 }

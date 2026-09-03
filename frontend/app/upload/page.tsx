@@ -11,15 +11,16 @@ export default function UploadPage() {
       <header className="mb-8">
         <h1 className="font-display text-2xl font-semibold text-ink">Importer des données</h1>
         <p className="text-sm text-ink-soft mt-1">
-          Importez votre historique des ventes. Le stock actuel sera renseigné manuellement dans les paramètres d'entrepôt.
+          Importez les mouvements D365 (ventes, achats, transferts). Le stock peut ensuite être
+          recalé dans Entrepôts s&apos;il n&apos;est pas reconstruit automatiquement.
         </p>
       </header>
 
       <div className="grid md:grid-cols-1 gap-5">
         <UploadCard
-          title="Historique de ventes"
-          description="Fichier Excel ou CSV contenant les ventes par date et entrepôt."
-          expectedColumns=""
+          title="Mouvements de stock"
+          description="Fichier Excel ou CSV D365 par date et entrepôt. Les ventes, achats et transferts sont conservés."
+          expectedColumns="Date physique, Quantité, Entrepôt, Réception, Stock en sortie"
           onUpload={async (files) => {
             const res = await uploadSales(files);
             return res.message;
@@ -30,8 +31,9 @@ export default function UploadPage() {
       <div className="mt-8 rounded-3xl border border-line bg-surface p-6">
         <h2 className="font-semibold text-lg mb-4">Vérification des données</h2>
         <p className="text-sm text-ink-soft leading-7">
-          Les fichiers importés sont analysés et validés automatiquement. Après import, le dashboard et
-          les prévisions sont recalculés à partir de vos données.
+          Un fichier sans les colonnes requises est refusé (erreur 400) et n&apos;est pas enregistré.
+          Le dernier mois incomplet est affiché mais exclu des prévisions. Après import, rechargez
+          le tableau de bord pour recalculer les trajectoires.
         </p>
       </div>
 
@@ -39,11 +41,11 @@ export default function UploadPage() {
         <div>
           <p className="text-sm font-medium text-ink">Données importées ?</p>
           <p className="text-sm text-ink-soft">
-            Passez ensuite aux prévisions ou configurez vos entrepôts.
+            Vérifiez les prévisions, puis configurez le stock si besoin.
           </p>
         </div>
         <Link
-          href="/simulator"
+          href="/forecast"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-brand text-white text-sm font-medium hover:bg-brand-dark transition-colors whitespace-nowrap"
         >
           Aller aux prévisions
